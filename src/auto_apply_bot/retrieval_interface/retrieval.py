@@ -8,17 +8,25 @@ import numpy as np
 import faiss
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
 from auto_apply_bot.logger import get_logger
 from auto_apply_bot import resolve_project_source
 
 
 logger = get_logger(__name__)
 PROJECT_PATH = resolve_project_source()
-ALLOWED_FILE_TYPES = [".txt", ".pdf", ".doc", ".docx"]
+
+
+LOADER_MAP = {
+    ".pdf": PyPDFLoader,
+    ".txt": lambda path: TextLoader(path, encoding="utf-8"),
+    ".docx": Docx2txtLoader,
+    ".doc": UnstructuredWordDocumentLoader,
+}
+
 
 class LocalRagIndexer:
-    allowed_file_types: str = ALLOWED_FILE_TYPES
+    loader_map: dict = LOADER_MAP
 
     def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2"):
         self.project_dir: Path = Path(project_dir)
@@ -37,19 +45,23 @@ class LocalRagIndexer:
     @classmethod
     def is_allowed_file_type(cls, filename: str) -> bool:
         ext = os.path.splitext(filename)[1].lower()
-        return ext in cls.allowed_file_types
+        return ext in cls.loader_map.keys()
+
+    @classmethod
+    def get_supported_file_types(cls) -> List[str]:
+        return sorted(cls.loader_map.keys())
 
     def _check_index_exists(self) -> bool:
         return (self.vector_store / "faiss_index.idx").exists() and (self.vector_store / "chunk_texts.json").exists()
 
     def load_document(self, filepath: Union[Path, str]) -> List[Document]:
-        ext = os.path.splitext(filepath)[1]
-        if ext == ".pdf":
-            loader = PyPDFLoader(filepath)
-        elif ext == ".docx":
-            loader = Docx2txtLoader(filepath)
-        else:
+        ext = os.path.splitext(filepath)[1].lower()
+
+        loader_class = self.loader_map.get(ext)
+        if not loader_class:
             raise ValueError(f"Unsupported file type: {ext}")
+
+        loader = loader_class(filepath) if not callable(loader_class(filepath)) else loader_class(filepath)
         docs = loader.load()
         logger.info(f"Loaded {len(docs)} pages from {filepath}")
         return docs

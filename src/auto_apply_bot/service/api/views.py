@@ -33,10 +33,9 @@ def upload_documents(request: HttpRequest):
         return JsonResponse({'error': 'Total upload size exceeds 50MB limit'}, status=400)
 
     for file in files:
-        ext = os.path.splitext(file.name)[1].lower()
         if not rag.is_allowed_file_type(file.name):
             logger.warning(f"Rejected file '{file.name}' due to invalid extensions")
-            statuses.append({"file": file.name, "status": "error", "details": "Invalid file type"})
+            statuses.append({"file": file.name, "status": "error", "details": f"Invalid file type, only {rag.get_supported_file_types()} allowed"})
             continue
 
         if file.size > 10 * 1024 * 1024:
