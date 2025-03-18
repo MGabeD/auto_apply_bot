@@ -19,7 +19,7 @@ def query_rag(request):
 
 # TODO remove this csrf once I actually build everything out
 @csrf_exempt
-def upload_documents(request: HttpRequest):
+def upload_documents_rag(request: HttpRequest):
     if request.method != "POST":
         return JsonResponse({"error": "Only POST method allowed"}, status=405)
     if 'file' not in request.FILES:
