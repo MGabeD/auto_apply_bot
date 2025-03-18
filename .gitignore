@@ -5,3 +5,4 @@ logs/
 *.un~
 *~
 __pycache__/
+db.sqlite3

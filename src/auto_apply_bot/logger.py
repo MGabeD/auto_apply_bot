@@ -3,26 +3,38 @@ from datetime import datetime
 from pathlib import Path
 from auto_apply_bot import resolve_project_source
 
+
+_run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
 def get_logger(name: str) -> logging.Logger:
-    proj_root = resolve_project_source()
-    logs_dir = proj_root / "logs"
+
+    project_root: Path = resolve_project_source()
+    logs_dir: Path = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_file = logs_dir / f"{name.replace('.', '_')}_{timestamp}.log"
+    log_file_path = logs_dir / f"pipeline_run_{_run_id}.log"
 
     logger = logging.getLogger(name)
     if not logger.handlers:
         logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
-                                      datefmt='%Y-%m-%d %H:%M:%S')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        file_handler = logging.FileHandler(log_file, mode="w")
-        file_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
-                                           datefmt='%Y-%m-%d %H:%M:%S')
+
+        stream_handler = logging.StreamHandler()
+        stream_formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        stream_handler.setFormatter(stream_formatter)
+        logger.addHandler(stream_handler)
+
+        file_handler = logging.FileHandler(log_file_path, mode="a")
+        file_formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
-        logger.info(f"Logging to file {log_file}")
+
+        logger.info(f"Logger initialized, writing to: {log_file_path}")
+
     return logger
