@@ -89,11 +89,11 @@ class LocalRagIndexer:
         logger.info(f"Added {len(new_chunks)} unique chunks to the index.")
         self.save()
 
-    def _chunk_documents(self, documents: List[Document], chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
+    def _chunk_documents(self, documents: List[Document], chunk_size: int = 1000, chunk_overlap: int = 50) -> List[str]:
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         chunks = splitter.split_documents(documents)
         logger.info(f"Split into {len(chunks)} chunks")
-        return [chunk.page_context for chunk in chunks]
+        return [chunk.page_content for chunk in chunks]
 
     def _embed_chunks(self, chunks: List[str], batch_size: int = 16) -> 'np.ndarray':
         embeddings_list = []
@@ -129,3 +129,56 @@ class LocalRagIndexer:
         with open(self.vector_store / "chunk_hashes.json", "r") as f:
             self.chunk_hashes = set(json.load(f))
         logger.info(f"Index and metadata loaded from {self.vector_store}")
+
+    def query(self,
+              query_text: str,
+              top_k: int = 5,
+              similarity_threshold: float = 0.0,
+              deduplicate: bool = False, ) -> List[dict]:
+        if self.index is None or not self.chunk_texts:
+            raise ValueError("RAG index is empty. Add documents before querying.")
+
+        query_embedding = self.embedder.encode([query_text], convert_to_numpy=True)
+        distances, indices = self.index.search(query_embedding, top_k)
+        max_dist = np.max(distances) if np.max(distances) > 0 else 1.0
+        similarities = 1 - (distances[0] / max_dist)
+
+        results = []
+        seen_texts = set()
+        for idx, sim, raw_dist in zip(indices[0], similarities, distances[0]):
+            if idx >= len(self.chunk_texts):
+                continue
+            chunk_text = self.chunk_texts[idx]
+            if sim < similarity_threshold:
+                continue
+            if deduplicate:
+                text_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                if text_hash in seen_texts:
+                    continue
+                seen_texts.add(text_hash)
+            results.append({
+                "text": chunk_text,
+                "similarity": round(float(sim), 4),
+                "distance": round(float(raw_dist), 4),
+                "length": len(chunk_text)
+            })
+        logger.info(f"Query returned {len(results)} results for: {query_text}")
+        return results
+
+    def wipe_rag(self) -> None:
+        """Completely wipes the in-memory and on-disk RAG data."""
+        self.index = None
+        self.chunk_texts = []
+        self.chunk_hashes = set()
+
+        try:
+            index_path = self.vector_store / "faiss_index.idx"
+            chunks_path = self.vector_store / "chunk_texts.json"
+            hashes_path = self.vector_store / "chunk_hashes.json"
+            for file_path in [index_path, chunks_path, hashes_path]:
+                if file_path.exists():
+                    os.remove(file_path)
+                    logger.info(f"Deleted: {file_path}")
+            logger.warning("RAG has been wiped completely.")
+        except Exception as e:
+            logger.error(f"Error wiping RAG files: {e}", exc_info=True)

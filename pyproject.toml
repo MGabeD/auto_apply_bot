@@ -36,6 +36,7 @@ dependencies = [
     "langchain_community",
     "pypdf",
     "python-docx",
+    "docx2txt",
 ]
 
 [project.optional-dependencies]
