@@ -15,9 +15,11 @@ from auto_apply_bot import resolve_project_source
 
 logger = get_logger(__name__)
 PROJECT_PATH = resolve_project_source()
-
+ALLOWED_FILE_TYPES = [".txt", ".pdf", ".doc", ".docx"]
 
 class LocalRagIndexer:
+    allowed_file_types: str = ALLOWED_FILE_TYPES
+
     def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2"):
         self.project_dir: Path = Path(project_dir)
         self.vector_store: Path = (project_dir / "vector_store")
@@ -31,6 +33,11 @@ class LocalRagIndexer:
             self.load()
         else:
             logger.warning("No existing vector store found. RAG is empty but still functional")
+
+    @classmethod
+    def is_allowed_file_type(cls, filename: str) -> bool:
+        ext = os.path.splitext(filename)[1].lower()
+        return ext in cls.allowed_file_types
 
     def _check_index_exists(self) -> bool:
         return (self.vector_store / "faiss_index.idx").exists() and (self.vector_store / "chunk_texts.json").exists()
@@ -110,6 +117,3 @@ class LocalRagIndexer:
         with open(self.vector_store / "chunk_hashes.json", "r") as f:
             self.chunk_hashes = set(json.load(f))
         logger.info(f"Index and metadata loaded from {self.vector_store}")
-
-
-a = LocalRagIndexer()
