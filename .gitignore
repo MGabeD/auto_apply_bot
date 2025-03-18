@@ -1,3 +1,7 @@
 .idea/
 .env
 **/*.egg-info/
+logs/
+*.un~
+*~
+__pycache__/
