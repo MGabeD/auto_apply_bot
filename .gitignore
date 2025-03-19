@@ -5,4 +5,5 @@ logs/
 *.un~
 *~
 __pycache__/
+profile_data/
 db.sqlite3
