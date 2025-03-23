@@ -12,6 +12,25 @@ from accelerate import infer_auto_device_map, init_empty_weights
 logger = get_logger(__name__)
 
 
+def determine_batch_size(device_index: int = 0) -> int:
+    """
+    Dynamically determines batch size based on free GPU VRAM.
+    :param device_index: CUDA device index (default = 0)
+    :return: Optimal batch size
+    """
+    free_mem, _ = torch.cuda.mem_get_info(device_index)
+    vram_gb = free_mem / 1e9
+    logger.info(f"Determining batch size for {vram_gb} free GB of VRAM")
+    if vram_gb >= 10:
+        return 8
+    elif vram_gb >= 6:
+        return 4
+    elif vram_gb >= 2:
+        return 2
+    else:
+        return 1
+
+
 def log_free_memory(device_index: int = 0) -> float:
     """
     Logs available GPU memory and returns it as a float in GB.
@@ -184,7 +203,7 @@ class SkillParser:
         combined_text = " ".join(description)
         chunks = self._split_text(combined_text)
         skills = set()
-
+        prompts = []
         for chunk in chunks:
             prompt = (
                 f"As a technical recruiter, extract ONLY the specific technical skills, frameworks, tools, or methodologies a software engineer would need based on this job description. "
@@ -192,19 +211,96 @@ class SkillParser:
                 f"Do NOT list general skills like 'Git' or 'Agile' unless critical. "
                 f"Return a comma-separated list.\n\nJob Description:\n{chunk}\n\nSkills:"
             )
-            response = self.pipe(
-                prompt,
-                max_new_tokens=300,
-                do_sample=True,
-                temperature=0.3,
-                top_p=0.9,
-                top_k=30,
-            )
-            res_text= response[0]['generated_text']
+            prompts.append(prompt)
+        batch_size = determine_batch_size(device_index= 0 if self.device == "cuda" else -1)
+        responses = self.pipe(
+            prompts,
+            batch_size=batch_size,
+            max_new_tokens=300,
+            do_sample=True,
+            temperature=0.3,
+            top_p=0.9,
+            top_k=30,
+        )
+        for chunk, res in zip(chunks, responses):
+            res_text = res[0]['generated_text']
             extracted = self._post_process_extract_skill(res_text)
             skills.update(extracted)
             logger.info(f"Extracted skills {extracted} from chunk {chunk}")
         return list(skills)
+
+    def _batch_assess_requirements(self,
+                                   requirements: List[str],
+                                   profile: str ) -> Dict[str, Optional[int]]:
+        """
+
+        :param requirements:
+        :param profile:
+        :return:
+        """
+        prompts = []
+        for requirement in requirements:
+            prompt = (
+                "You are a highly skeptical hiring manager who ONLY trusts full-time professional work experience. "
+                "You do NOT trust internships, personal projects, coursework, or one-off mentions. "
+                "You ONLY give a 4 or 5 if the skill is clearly present in MULTIPLE full-time professional roles.\n"
+                "Use this scale:\n"
+                "1 = unqualified\n"
+                "2 = mentioned in personal projects/internships only\n"
+                "3 = mentioned ONCE in a professional job\n"
+                "4 = mentioned in TWO professional jobs\n"
+                "5 = mentioned in THREE or more professional jobs.\n"
+                "Respond ONLY with a single digit (1-5).\n\n"
+
+                # First example
+                "Example Requirement:\nExperience with CI/CD pipelines.\n"
+                "Example Candidate Profile:\n"
+                "- Built CI/CD pipeline in a capstone project.\n"
+                "- Used Jenkins briefly in an internship.\n"
+                "- Professional experience mentions CI/CD once in passing.\n"
+                "Rating: 3\n\n"
+
+                # Second example (harsher one)
+                "Example Requirement:\nStrong SQL and NoSQL database experience.\n"
+                "Example Candidate Profile:\n"
+                "- Used MongoDB in personal projects.\n"
+                "- Familiar with SQL from coursework.\n"
+                "- Mentioned SQL during a summer internship.\n"
+                "- Professional jobs do NOT mention SQL or NoSQL directly.\n"
+                "Rating: 2\n\n"
+
+                # Your real input
+                f"Requirement:\n{requirement}\n\n"
+                f"Candidate Profile:\n{profile}\n\n"
+                "Rating:"
+            )
+            prompts.append(prompt)
+        batch_size = determine_batch_size(device_index= 0 if self.device == 'cuda' else -1)
+        logger.info(f"Running requirement assessments in batch_size={batch_size}")
+        responses = self.pipe(
+            prompts,
+            batch_size=batch_size,
+            max_new_tokens=50,
+            do_sample=False,
+        )
+        req_ratings = {}
+        for req, response in zip(requirements, responses):
+            response_clean = response[0]["generated_text"]
+            response_clean = response_clean.split("Rating:")[-1]
+
+            try:
+                # Look for a standalone digit 1-5
+                match = int(re.search(r'(\d)', response_clean).group(1))
+                if match:
+                    req_ratings[req] = match
+                    logger.info(f"Rating {match} for the skill or requirement of: {req}")
+                else:
+                    logger.warning(f"No valid rating found in model output: '{response_clean}'")
+                    req_ratings[req] = None
+            except Exception as e:
+                logger.warning(f"Error parsing rating from: '{response_clean}' | err: {e}")
+                req_ratings[req] = None
+        return req_ratings
 
     def _asses_requirement(self, requirement: str, profile: str) -> Optional[int]:
         """
@@ -279,14 +375,52 @@ class SkillParser:
         profile_source = resolve_project_source() / "profile_data" / profile_file
         with open(profile_source, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        json_str = json.dumps(data)
+        candidate_profile_data = json.dumps(data)
 
-        # MAIN prompt
+        # MARK: Old prompt - validate which one does better if you have time
+        # prompt = (
+        #     "You are a strict but fair hiring expert. You critically evaluate candidates based on actual hands-on work experience "
+        #     "and give less weight to self-reported skills or extracurriculars. "
+        #     "For the following job requirement and candidate profile, rate the candidate's fit based on relevant, practical experience only. "
+        #     "Use a scale from 1 to 5 where 5 = overqualified, 3 = qualified, and 1 = unqualified. "
+        #     "Respond ONLY with a single digit (1-5) and nothing else.\n\n"
+        #     f"Requirement:\n{flat_requirements}\n\n"
+        #     f"Candidate Profile:\n{candidate_profile_data}\n\n"
+        #     "Rating:"
+        # )
         prompt = (
-            "You are a hiring expert. On a scale of 1 to 5 (5 = over qualified, 1 = unqualified, 3 = qualified), "
-            "how well does this candidate's profile match the following role requirements? "
+            "You are a highly skeptical hiring manager who ONLY trusts full-time professional work experience. "
+            "You do NOT trust internships, personal projects, coursework, or one-off mentions. "
+            "You ONLY give a 4 or 5 if the skill is clearly present in MULTIPLE full-time professional roles.\n"
+            "Use this scale:\n"
+            "1 = unqualified\n"
+            "2 = mentioned in personal projects/internships only\n"
+            "3 = mentioned ONCE in a professional job\n"
+            "4 = mentioned in TWO professional jobs\n"
+            "5 = mentioned in THREE or more professional jobs.\n"
             "Respond ONLY with a single digit (1-5).\n\n"
-            f"Requirements:\n{flat_requirements}\n\nProfile:\n{json_str}\n\n Qualification Rating:"
+
+            # First example
+            "Example Requirement:\nExperience with CI/CD pipelines.\n"
+            "Example Candidate Profile:\n"
+            "- Built CI/CD pipeline in a capstone project.\n"
+            "- Used Jenkins briefly in an internship.\n"
+            "- Professional experience mentions CI/CD once in passing.\n"
+            "Rating: 3\n\n"
+
+            # Second example (harsher one)
+            "Example Requirement:\nStrong SQL and NoSQL database experience.\n"
+            "Example Candidate Profile:\n"
+            "- Used MongoDB in personal projects.\n"
+            "- Familiar with SQL from coursework.\n"
+            "- Mentioned SQL during a summer internship.\n"
+            "- Professional jobs do NOT mention SQL or NoSQL directly.\n"
+            "Rating: 2\n\n"
+
+            # Your real input
+            f"Requirement:\n{flat_requirements}\n\n"
+            f"Candidate Profile:\n{candidate_profile_data}\n\n"
+            "Rating:"
         )
         response = self.pipe(prompt, max_new_tokens=100, do_sample=False)[0]['generated_text']
         res_cut = response.split("Rating:")[-1]
@@ -301,13 +435,15 @@ class SkillParser:
         req_ratings["overall"] = rating
         if rating < 3 or line_by_line_override:
             logger.warning(f"Overall rating: {rating}/5")
-            for req in flat_requirements.split("\n"):
-                req_rating = self._asses_requirement(requirement=req, profile=json_str)
-                req_ratings[req] = req_rating
-                if req_rating is not None and req_rating < 3:
-                    logger.warning(f"Potential weak match: {req_rating}/5 for requirement: {req}")
-                else:
-                    logger.info(f"Potential match in skills! {req_rating}/5 for requirement: {req}")
+            req_ratings.update(self._batch_assess_requirements(requirements=flat_requirements.split("\n"),
+                                                               profile=candidate_profile_data))
+            # for req in flat_requirements.split("\n"):
+            #     req_rating = self._asses_requirement(requirement=req, profile=candidate_profile_data)
+            #     req_ratings[req] = req_rating
+            #     if req_rating is not None and req_rating < 3:
+            #         logger.warning(f"Potential weak match: {req_rating}/5 for requirement: {req}")
+            #     else:
+            #         logger.info(f"Potential match in skills! {req_rating}/5 for requirement: {req}")
             return req_ratings
         else:
             logger.info(f"Overall rating: {rating} - strong match")
