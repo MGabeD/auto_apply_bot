@@ -164,6 +164,52 @@ class LocalRagIndexer:
             })
         logger.info(f"Query returned {len(results)} results for: {query_text}")
         return results
+    
+    def batch_query(self,
+                    query_texts: List[str],
+                    top_k: int = 5,
+                    similarity_threshold: float = 0.0,
+                    deduplicate: bool = False, ) -> dict[str, List[dict]]:
+        """
+        Runs batched quereies over multiple query strings.
+        :param query_texts: List of query strings
+        :param top_k: Number of results to return per query
+        :param similarity_threshold: Minimum similarity score to include a result
+        :param deduplicate: Whether to deduplicate results within each query (based on text hash)
+        :return: dict of results per query, each as a list of dicts
+        """
+        if self.index is None or not self.chunk_texts:
+            raise ValueError("RAG index is empty. Add documents before querying.")
+        
+        query_embeddings = self.embedder.encode(query_texts, convert_to_numpy=True)
+        distances, indices = self.index.search(query_embeddings, top_k)
+
+        batch_results = {}
+        for i, query in enumerate(query_texts):
+            max_dist = np.max(distances[i]) if np.max(distances[i]) > 0 else 1.0
+            similarities = 1 - (distances[i] / max_dist)
+
+            results = []
+            seen_texts = set()
+            for idx, sim, raw_dist in zip(indices[i], similarities, distances[i]):
+                if idx >= len(self.chunk_texts):
+                    continue
+                chunk_text = self.chunk_texts[idx]
+                if sim < similarity_threshold:
+                    continue
+                if deduplicate:
+                    text_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                    if text_hash in seen_texts:
+                        continue
+                    seen_texts.add(text_hash)
+                results.append({
+                    "text": chunk_text,
+                    "similarity": round(float(sim), 4),
+                    "distance": round(float(raw_dist), 4),
+                    "length": len(chunk_text), 
+                })
+            batch_results[query] = results
+        return batch_results
 
     def wipe_rag(self) -> None:
         """Completely wipes the in-memory and on-disk RAG data."""
