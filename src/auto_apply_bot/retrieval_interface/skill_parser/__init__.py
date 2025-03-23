@@ -214,24 +214,35 @@ class SkillParser:
         :return: Rating between 1 and 5 or None if parsing fails
         """
         prompt = (
-            "You are a highly skeptical hiring manager who ONLY trusts professional work experience (full-time roles), not internships, side projects, or coursework. "
-            "For each requirement, rate the candidate’s qualification STRICTLY based on multiple mentions in professional jobs. "
-            "Do NOT give a 4 or 5 unless the skill appears in multiple professional roles.\n"
-            "Use the following scale:\n"
+            "You are a highly skeptical hiring manager who ONLY trusts full-time professional work experience. "
+            "You do NOT trust internships, personal projects, coursework, or one-off mentions. "
+            "You ONLY give a 4 or 5 if the skill is clearly present in MULTIPLE full-time professional roles.\n"
+            "Use this scale:\n"
             "1 = unqualified\n"
-            "2 = mentioned in non-professional projects only\n"
-            "3 = mentioned in ONE professional job\n"
+            "2 = mentioned in personal projects/internships only\n"
+            "3 = mentioned ONCE in a professional job\n"
             "4 = mentioned in TWO professional jobs\n"
             "5 = mentioned in THREE or more professional jobs.\n"
             "Respond ONLY with a single digit (1-5).\n\n"
 
-            "Example Requirement:\nDocker and Kubernetes experience.\n"
+            # First example
+            "Example Requirement:\nExperience with CI/CD pipelines.\n"
             "Example Candidate Profile:\n"
-            "- Built a personal project using Docker.\n"
-            "- Used Kubernetes once during a school project.\n"
-            "- Mentioned Docker in a summer internship.\n"
-            "- Professional job only briefly mentions Docker in a single bullet point.\n"
+            "- Built CI/CD pipeline in a capstone project.\n"
+            "- Used Jenkins briefly in an internship.\n"
+            "- Professional experience mentions CI/CD once in passing.\n"
             "Rating: 3\n\n"
+
+            # Second example (harsher one)
+            "Example Requirement:\nStrong SQL and NoSQL database experience.\n"
+            "Example Candidate Profile:\n"
+            "- Used MongoDB in personal projects.\n"
+            "- Familiar with SQL from coursework.\n"
+            "- Mentioned SQL during a summer internship.\n"
+            "- Professional jobs do NOT mention SQL or NoSQL directly.\n"
+            "Rating: 2\n\n"
+
+            # Your real input
             f"Requirement:\n{requirement}\n\n"
             f"Candidate Profile:\n{profile}\n\n"
             "Rating:"
