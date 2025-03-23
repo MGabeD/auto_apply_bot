@@ -47,7 +47,6 @@ test = [
     "pytest-randomly",
     "requests_mock",
     "coverage",
-    "psinc-test-tools >= 0.4",
     "webdriver-manager",
 ]
 
