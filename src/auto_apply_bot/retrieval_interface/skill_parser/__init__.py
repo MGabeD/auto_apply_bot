@@ -13,6 +13,11 @@ logger = get_logger(__name__)
 
 
 def log_free_memory(device_index: int = 0) -> float:
+    """
+    Logs available GPU memory and returns it as a float in GB.
+    :param device_index: CUDA device index (default = 0)
+    :return: Free memory on the selected GPU in GB
+    """
     free_mem, total_mem = torch.cuda.mem_get_info(device_index)
     free_mem_gb = free_mem / 1e9
     logger.info(f"GPU free memory: {free_mem_gb:.2f} GB")
@@ -20,6 +25,12 @@ def log_free_memory(device_index: int = 0) -> float:
 
 
 def extract_sections(job_posting: str) -> Dict[str, List[str]]:
+    """
+    Extracts sections from a job posting such as description, responsibilities, and requirements.
+    :param job_posting: Raw job posting text
+    :return: Dictionary with keys ['description', 'responsibilities', 'requirements', 'other'] and corresponding list
+             of lines
+    """
     sections = {
         'description': [],
         'responsibilities': [],
@@ -27,14 +38,12 @@ def extract_sections(job_posting: str) -> Dict[str, List[str]]:
         'other': []
     }
 
-    # Define patterns
     patterns = {
         'description': r'(job description|about the role|overview)',
         'responsibilities': r'(responsibilities|duties|what you\'ll do)',
         'requirements': r'(requirements|qualifications|what we\'re looking for)'
     }
 
-    # Keep track of all ranges we capture
     captured_ranges = []
 
     for section, pattern in patterns.items():
@@ -75,12 +84,23 @@ class SkillParser:
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig( load_in_8bit=True,
                                                                       llm_int8_threshold=6.0,
                                                                       llm_int8_has_fp16_weight=False )):
+        """
+        Initializes the SkillParser with model parameters and device configuration.
+        :param model_name: Hugging Face model name or path (default is deepseek's chat)
+        :param device: Target device ('cuda' or 'cpu') (default is cuda)
+        :param bnb_config: BitsAndBytesConfig object for quantization (default is for deepseek chat 7B 8bit quantized)
+        """
         self.model_name = model_name
         self.device = device
         self.pipe = None
         self.bnb_config = bnb_config
 
     def __enter__(self):
+        """
+        Loads the tokenizer and quantized model into memory, prioritizing full GPU load.
+        Automatically falls back to a GPU+CPU device map if GPU memory is insufficient.
+        :return: Self, with initialized pipeline for text generation
+        """
         torch.cuda.empty_cache()
         log_free_memory()
         tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
@@ -124,24 +144,43 @@ class SkillParser:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Cleans up the pipeline and releases GPU memory on context exit.
+        :return: None
+        """
         self.pipe = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
         logger.info("Pipeline and GPU memory successfully released.")
 
     def _split_text(self, text: str, chunk_size: int = 400) -> List[str]:
+        """
+        Splits a long string into smaller chunks.
+        :param text: The input text to split
+        :param chunk_size: The maximum size of each chunk (default = 400)
+        :return: List of text chunks
+        """
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=50)
         return splitter.split_text(text)
 
-    def _post_process(self, response: str, split_string:str='\n') -> List[str]:
-        # response = re.sub(r'^(skills|answer|result|output)[:\s-]*', '', response, flags=re.IGNORECASE)
-        # cleaned = re.sub(r'[^a-zA-Z0-9+/#&,\s-]', '', response)
+    def _post_process_extract_skill(self, response: str, split_string:str='\n') -> List[str]:
+        """
+        Processes model output to clean and extract skill items.
+        :param response: Raw model response string
+        :param split_string: Delimiter to split output (default = '\n')
+        :return: List of cleaned and deduplicated skills (not in concept but exact string match)
+        """
         cleaned = response.split("\nSkills:")[-1]
         skills = [s.strip() for s in cleaned.split(split_string) if s.strip()]
         skills = [re.sub(r'^[^a-zA-Z]+', '', s) for s in skills]
         return list(set(skills))
 
     def extract_skills(self, description: List[str]) -> List[str]:
+        """
+        Extracts relevant technical skills from job description text.
+        :param description: List of lines from job description and requirements
+        :return: List of extracted skills
+        """
         combined_text = " ".join(description)
         chunks = self._split_text(combined_text)
         skills = set()
@@ -162,27 +201,51 @@ class SkillParser:
                 top_k=30,
             )
             res_text= response[0]['generated_text']
-            extracted = self._post_process(res_text)
+            extracted = self._post_process_extract_skill(res_text)
             skills.update(extracted)
-        logger.info(f"Extracted skills {skills}")
+            logger.info(f"Extracted skills {extracted} from chunk {chunk}")
         return list(skills)
 
     def _asses_requirement(self, requirement: str, profile: str) -> Optional[int]:
+        """
+        Rates how well a candidate's profile matches a specific requirement.
+        :param requirement: A single job requirement line
+        :param profile: JSON-serialized candidate profile data
+        :return: Rating between 1 and 5 or None if parsing fails
+        """
         prompt = (
-            "Rate from 1 to 5 how well this profile matches the following job requirement. "
-            "Respond ONLY with a single digit (1-5). 5 = overqualified, 1 = unqualified.\n\n"
-            f"Requirement: {requirement}\n\nProfile: {profile}\n\nAnswer:"
+            "You are a highly skeptical hiring manager who ONLY trusts professional work experience (full-time roles), not internships, side projects, or coursework. "
+            "For each requirement, rate the candidate’s qualification STRICTLY based on multiple mentions in professional jobs. "
+            "Do NOT give a 4 or 5 unless the skill appears in multiple professional roles.\n"
+            "Use the following scale:\n"
+            "1 = unqualified\n"
+            "2 = mentioned in non-professional projects only\n"
+            "3 = mentioned in ONE professional job\n"
+            "4 = mentioned in TWO professional jobs\n"
+            "5 = mentioned in THREE or more professional jobs.\n"
+            "Respond ONLY with a single digit (1-5).\n\n"
+
+            "Example Requirement:\nDocker and Kubernetes experience.\n"
+            "Example Candidate Profile:\n"
+            "- Built a personal project using Docker.\n"
+            "- Used Kubernetes once during a school project.\n"
+            "- Mentioned Docker in a summer internship.\n"
+            "- Professional job only briefly mentions Docker in a single bullet point.\n"
+            "Rating: 3\n\n"
+            f"Requirement:\n{requirement}\n\n"
+            f"Candidate Profile:\n{profile}\n\n"
+            "Rating:"
         )
-        response = self.pipe(prompt, max_new_tokens=10, do_sample=False)[0]['generated_text']
 
+        response = self.pipe(prompt, max_new_tokens=40, do_sample=False)[0]['generated_text']
         # Extract only the "completion" part (after prompt)
-        response_clean = response.split("Answer:")[-1].strip()
-
+        response_clean = response.split("Rating:")[-1]
+        logger.warning(requirement + "\n" + response_clean)
         try:
             # Look for a standalone digit 1-5
-            match = re.search(r'\b([1-5])\b', response_clean)
+            match = int(re.search(r'(\d)', response_clean).group(1))
             if match:
-                return int(match.group(1))
+                return match
             else:
                 logger.warning(f"No valid rating found in model output: '{response_clean}'")
                 return None
@@ -190,7 +253,15 @@ class SkillParser:
             logger.warning(f"Error parsing rating from: '{response_clean}' | err: {e}")
             return None
 
-    def assess_qualifications(self, requirements: Dict[str, List[str]], profile_file: str) -> dict:
+    def assess_qualifications(self, requirements: Dict[str, List[str]], profile_file: str, line_by_line_override: bool = False) -> dict:
+        """
+        Evaluates a candidate's profile against job requirements and returns a qualification rating.
+        Performs an overall assessment first; if the rating is low or line_by_line_override is True, it falls back to rating each requirement individually.
+        :param requirements: Dictionary of job requirements and/or extracted skills
+        :param profile_file: Filename of the candidate's JSON profile (inside 'profile_data' directory)
+        :param line_by_line_override: If True, forces detailed per-requirement scoring regardless of overall rating
+        :return: Dictionary with an 'overall' rating and optionally individual ratings for each requirement
+        """
         # Flatten requirements list
         flat_requirements = "\n".join([item for sublist in requirements.values() for item in sublist])
 
@@ -207,8 +278,7 @@ class SkillParser:
             f"Requirements:\n{flat_requirements}\n\nProfile:\n{json_str}\n\n Qualification Rating:"
         )
         response = self.pipe(prompt, max_new_tokens=100, do_sample=False)[0]['generated_text']
-        res_cut = response.split("Rating:")
-        res_cut = res_cut[-1]
+        res_cut = response.split("Rating:")[-1]
         try:
             rating = int(re.search(r'(\d)', res_cut).group(1))
         except Exception as e:
@@ -218,7 +288,8 @@ class SkillParser:
         # Fallback: break it down requirement-by-requirement if low rating
         req_ratings = dict()
         req_ratings["overall"] = rating
-        if rating < 3:
+        if rating < 3 or line_by_line_override:
+            logger.warning(f"Overall rating: {rating}/5")
             for req in flat_requirements.split("\n"):
                 req_rating = self._asses_requirement(requirement=req, profile=json_str)
                 req_ratings[req] = req_rating
@@ -232,7 +303,14 @@ class SkillParser:
         return req_ratings
 
 
-    def get_job_extracts(self, job_reqs: str, user_path: str) -> Tuple[List[str] ,dict]:
+    def get_job_extracts(self, job_reqs: str, user_path: str, line_by_line_override: bool = False) -> Tuple[List[str] ,dict]:
+        """
+        Runs full pipeline to extract skills and assess qualifications.
+        :param job_reqs: Raw job posting text
+        :param user_path: Profile JSON filename inside the 'profile_data' folder
+        :param line_by_line_override: If True, forces detailed per-requirement scoring regardless of overall rating
+        :return: Tuple of (list of enriched requirements/skills, qualification ratings dict)
+        """
         data = extract_sections(job_posting=job_reqs)
         logger.info(f"Extracted sections: {list(data.keys())}")
 
@@ -243,6 +321,7 @@ class SkillParser:
         enriched_reqs.update(skills)
         enriched_reqs.update(data.get("requirements"))
         logger.info("Running qualification assessment...")
-        rating = self.assess_qualifications(requirements={"requirements&skills" : list(enriched_reqs)}, profile_file=user_path)
-
+        rating = self.assess_qualifications(requirements={"requirements&skills" : list(enriched_reqs)},
+                                            profile_file=user_path,
+                                            line_by_line_override=line_by_line_override)
         return enriched_reqs, rating
