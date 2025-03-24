@@ -7,40 +7,11 @@ from auto_apply_bot.logger import get_logger
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from accelerate import infer_auto_device_map, init_empty_weights
+from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory
+from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
 
 
 logger = get_logger(__name__)
-
-
-def determine_batch_size(device_index: int = 0) -> int:
-    """
-    Dynamically determines batch size based on free GPU VRAM.
-    :param device_index: CUDA device index (default = 0)
-    :return: Optimal batch size
-    """
-    free_mem, _ = torch.cuda.mem_get_info(device_index)
-    vram_gb = free_mem / 1e9
-    logger.info(f"Determining batch size for {vram_gb} free GB of VRAM")
-    if vram_gb >= 10:
-        return 8
-    elif vram_gb >= 6:
-        return 4
-    elif vram_gb >= 2:
-        return 2
-    else:
-        return 1
-
-
-def log_free_memory(device_index: int = 0) -> float:
-    """
-    Logs available GPU memory and returns it as a float in GB.
-    :param device_index: CUDA device index (default = 0)
-    :return: Free memory on the selected GPU in GB
-    """
-    free_mem, total_mem = torch.cuda.mem_get_info(device_index)
-    free_mem_gb = free_mem / 1e9
-    logger.info(f"GPU free memory: {free_mem_gb:.2f} GB")
-    return free_mem_gb
 
 
 def extract_sections(job_posting: str) -> Dict[str, List[str]]:
@@ -96,7 +67,7 @@ def extract_sections(job_posting: str) -> Dict[str, List[str]]:
     return sections
 
 
-class SkillParser:
+class SkillParser(BaseModelInterface):
     def __init__(self,
                  model_name: str = "deepseek-ai/deepseek-llm-7b-chat",
                  device: str = "cuda",
@@ -109,68 +80,7 @@ class SkillParser:
         :param device: Target device ('cuda' or 'cpu') (default is cuda)
         :param bnb_config: BitsAndBytesConfig object for quantization (default is for deepseek chat 7B 8bit quantized)
         """
-        self.model_name = model_name
-        self.device = device
-        self.pipe = None
-        self.bnb_config = bnb_config
-
-    def __enter__(self):
-        """
-        Loads the tokenizer and quantized model into memory, prioritizing full GPU load.
-        Automatically falls back to a GPU+CPU device map if GPU memory is insufficient.
-        :return: Self, with initialized pipeline for text generation
-        """
-        torch.cuda.empty_cache()
-        log_free_memory()
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
-        try:
-            logger.info("Trying full GPU load...")
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map={"": 0},
-                quantization_config=self.bnb_config,
-                trust_remote_code=True
-            )
-            logger.info("Loaded fully on GPU.")
-        except Exception as e:
-            logger.warning(f"GPU memory insufficient, falling back to GPU+CPU split. Err: {e}")
-            with init_empty_weights():
-                model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
-                    quantization_config=self.bnb_config,
-                    trust_remote_code=True
-                )
-
-            device_map = infer_auto_device_map(
-                model,
-                max_memory={0: "16GiB", "cpu": "64GiB"},
-                no_split_module_classes=["DecoderLayer"]
-            )
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map=device_map,
-                quantization_config=self.bnb_config,
-                trust_remote_code=True
-            )
-            logger.warning(f"Loaded model with CPU fallback. Device map: {device_map}")
-
-        self.pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer
-        )
-        log_free_memory()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Cleans up the pipeline and releases GPU memory on context exit.
-        :return: None
-        """
-        self.pipe = None
-        if self.device == "cuda":
-            torch.cuda.empty_cache()
-        logger.info("Pipeline and GPU memory successfully released.")
+        super().__init__(model_name, device, bnb_config)
 
     def _split_text(self, text: str, chunk_size: int = 400) -> List[str]:
         """
@@ -200,6 +110,8 @@ class SkillParser:
         :param description: List of lines from job description and requirements
         :return: List of extracted skills
         """
+        # TODO: If I decide to do the right thing and refactor this, to use the new 
+        #  run_prompts method it is everywhere where I pipe
         combined_text = " ".join(description)
         chunks = self._split_text(combined_text)
         skills = set()
@@ -233,10 +145,10 @@ class SkillParser:
                                    requirements: List[str],
                                    profile: str ) -> Dict[str, Optional[int]]:
         """
-
-        :param requirements:
-        :param profile:
-        :return:
+        Rates how well a candidate's profile matches a specific requirement.
+        :param requirements: List of job requirements
+        :param profile: JSON-serialized candidate profile data
+        :return: Dictionary with requirement as key and rating as value
         """
         prompts = []
         for requirement in requirements:
