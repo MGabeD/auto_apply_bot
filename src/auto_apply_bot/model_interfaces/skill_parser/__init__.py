@@ -437,18 +437,10 @@ class SkillParser:
             logger.warning(f"Overall rating: {rating}/5")
             req_ratings.update(self._batch_assess_requirements(requirements=flat_requirements.split("\n"),
                                                                profile=candidate_profile_data))
-            # for req in flat_requirements.split("\n"):
-            #     req_rating = self._asses_requirement(requirement=req, profile=candidate_profile_data)
-            #     req_ratings[req] = req_rating
-            #     if req_rating is not None and req_rating < 3:
-            #         logger.warning(f"Potential weak match: {req_rating}/5 for requirement: {req}")
-            #     else:
-            #         logger.info(f"Potential match in skills! {req_rating}/5 for requirement: {req}")
             return req_ratings
         else:
             logger.info(f"Overall rating: {rating} - strong match")
         return req_ratings
-
 
     def get_job_extracts(self, job_reqs: str, user_path: str, line_by_line_override: bool = False) -> Tuple[List[str] ,dict]:
         """

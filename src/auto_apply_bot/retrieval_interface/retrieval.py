@@ -30,7 +30,10 @@ LOADER_MAP = {
 class LocalRagIndexer:
     loader_map: dict = LOADER_MAP
 
-    def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2", lazy_embedder: bool = False):
+    def __init__(self, 
+                 project_dir: Union[str,Path] = PROJECT_PATH, 
+                 embed_model_name: str = "BAAI/bge-large-en-v1.5", 
+                 lazy_embedder: bool = False):
         self.project_dir: Path = Path(project_dir)
         self.vector_store: Path = (project_dir / "vector_store")
         self.embedder_model_name = embed_model_name
@@ -79,7 +82,25 @@ class LocalRagIndexer:
                 torch.cuda.empty_cache()
                 logger.info("Lazy embedder cleaned up and CUDA cache cleared")
         else:
+            if self._embedder is None:
+                logger.info(f"Persistent embedder was cleared, re-initializing on demand")
+                self._embedder = SentenceTransformer(self.embedder_model_name)
             yield self._embedder
+
+    def clear_embedder(self):
+        """
+        Clears the persistent embedder.
+        """
+        if self.lazy_embedder:
+            logger.warning("clear_embedder called in lazy mode, this will have no effect")
+            return
+        if self._embedder is not None:
+            del self._embedder
+            self._embedder = None
+            torch.cuda.empty_cache()
+            logger.info("Persistent embedder cleared")
+        else:
+            logger.warning("No persistent embedder to clear")
 
     def _check_index_exists(self) -> bool:
         """
