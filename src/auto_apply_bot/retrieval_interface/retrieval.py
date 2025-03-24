@@ -11,6 +11,7 @@ from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
 from auto_apply_bot.logger import get_logger
 from auto_apply_bot import resolve_project_source
+from contextlib import contextmanager
 import torch
 
 
@@ -34,7 +35,7 @@ class LocalRagIndexer:
         self.vector_store: Path = (project_dir / "vector_store")
         self.embedder_model_name = embed_model_name
         self.lazy_embedder = lazy_embedder
-        self.embedder: Optional[SentenceTransformer] = None if lazy_embedder else SentenceTransformer(embed_model_name)
+        self._embedder: Optional[SentenceTransformer] = None if lazy_embedder else SentenceTransformer(embed_model_name)
         self.index: Union[faiss.IndexFlatL2, None] = None
         self.chunk_texts: List[str] = []
         self.chunk_hashes: set = set()
@@ -62,6 +63,23 @@ class LocalRagIndexer:
         :return: List of supported file types
         """
         return sorted(cls.loader_map.keys())
+
+    @contextmanager
+    def _get_embedder(self):
+        """
+        Context manager to return an embedder depending on lazy or persistent mode.
+        """
+        if self.lazy_embedder:
+            logger.info("Instantiating embedder in lazy mode")
+            embedder = SentenceTransformer(self.embedder_model_name)
+            try:
+                yield embedder
+            finally:
+                del embedder
+                torch.cuda.empty_cache()
+                logger.info("Lazy embedder cleaned up and CUDA cache cleared")
+        else:
+            yield self._embedder
 
     def _check_index_exists(self) -> bool:
         """
@@ -135,25 +153,14 @@ class LocalRagIndexer:
         :return: numpy array of embedded chunks
         """
         embeddings_list = []
-        if self.lazy_embedder:
-            logger.info("Just in time embedder mode. Initializing SentenceTransformer")
-            embedder = SentenceTransformer(self.embedder_model_name)
-        else:
-            logger.info("Pre-initialized embedder mode. Using existing SentenceTransformer")
-            embedder = self.embedder
 
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
-            batch_embeddings = self.embedder.encode(batch, convert_to_numpy=True)
-            embeddings_list.append(batch_embeddings)
-        
+        with self._get_embedder() as embedder:
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i + batch_size]
+                batch_embeddings = embedder.encode(batch, convert_to_numpy=True)
+                embeddings_list.append(batch_embeddings)
+
         logger.info(f"Embedded {len(chunks)} chunks in batches of {batch_size}")
-
-        if self.lazy_embedder:
-            del embedder
-            torch.cuda.empty_cache()
-            logger.info("Emptied CUDA cache (SentenceTransformer cleanup)")
-            
         return np.vstack(embeddings_list)
 
     def _filter_duplicates(self, chunks: List[str]) -> List[str]:
@@ -209,7 +216,9 @@ class LocalRagIndexer:
         if self.index is None or not self.chunk_texts:
             raise ValueError("RAG index is empty. Add documents before querying.")
 
-        query_embedding = self.embedder.encode([query_text], convert_to_numpy=True)
+        with self._get_embedder() as embedder:
+            query_embedding = embedder.encode([query_text], convert_to_numpy=True)
+
         distances, indices = self.index.search(query_embedding, top_k)
         max_dist = np.max(distances) if np.max(distances) > 0 else 1.0
         similarities = 1 - (distances[0] / max_dist)
@@ -252,7 +261,9 @@ class LocalRagIndexer:
         if self.index is None or not self.chunk_texts:
             raise ValueError("RAG index is empty. Add documents before querying.")
         
-        query_embeddings = self.embedder.encode(query_texts, convert_to_numpy=True)
+        with self._get_embedder() as embedder:
+            query_embeddings = embedder.encode(query_texts, convert_to_numpy=True)
+
         distances, indices = self.index.search(query_embeddings, top_k)
 
         batch_results = {}
