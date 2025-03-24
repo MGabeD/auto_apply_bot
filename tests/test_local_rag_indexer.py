@@ -12,7 +12,9 @@ from auto_apply_bot.logger import get_logger
 logger = get_logger(__name__)
 
 
-# MARK: since this is a for fun project these tests are super super basic, don't cover all cases, and are just to make sure I am not breaking my interfaces unintentionally
+# MARK: since this is a for fun project these tests are super super basic, don't cover all cases, and are just to give me an indicator 
+#  for/if/when I break one of my interfaces unintentionally
+
 
 ### ----------------------
 ### CLASSMETHODS / STATIC
@@ -111,12 +113,10 @@ def test_save_and_load(rag_indexer):
     rag_indexer.index = mock.Mock()
     rag_indexer.index.ntotal = 1
 
-    # mock faiss.write_index
     with mock.patch("auto_apply_bot.retrieval_interface.retrieval.faiss.write_index") as write_mock:
         rag_indexer.save()
         write_mock.assert_called_once()
 
-    # now simulate reading
     with mock.patch("auto_apply_bot.retrieval_interface.retrieval.faiss.read_index", return_value=mock.Mock()):
         rag_indexer.load()
         assert rag_indexer.chunk_texts == ["abc"]
@@ -169,23 +169,19 @@ def test_wipe_rag(rag_indexer):
 ### ----------------------
 
 def test_batch_query_full_rag(rag_indexer, test_data_dir):
-    # Collect all test files in data/
     file_paths = list(test_data_dir.glob('*'))
     assert file_paths, "No test files found in tests/data/"
 
-    # Add documents to RAG
     rag_indexer.add_documents(file_paths=file_paths)
     assert rag_indexer.chunk_texts, "No chunks added to RAG"
     assert rag_indexer.index is not None
 
-    # Define multiple queries
     queries = [
         "What is experience with python does this candidate have?",
         "Extract key skills discussed in the text.",
         "What is the candidate's name?",
     ]
-
-    # Run batch query
+    
     results = rag_indexer.batch_query(query_texts=queries, top_k=5)
     assert isinstance(results, dict)
     assert set(results.keys()) == set(queries)
@@ -197,10 +193,8 @@ def test_batch_query_full_rag(rag_indexer, test_data_dir):
             assert "text" in result
             assert "similarity" in result
 
-    # Wipe everything
     rag_indexer.wipe_rag()
 
-    # Post-wipe asserts
     assert rag_indexer.index is None
     assert rag_indexer.chunk_texts == []
     assert rag_indexer.chunk_hashes == set()
