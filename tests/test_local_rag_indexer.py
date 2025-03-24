@@ -6,8 +6,13 @@ from pathlib import Path
 from unittest import mock
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
 from tests.mocks.mock_loader import DummyLoader
+from auto_apply_bot.logger import get_logger
 
 
+logger = get_logger(__name__)
+
+
+# MARK: since this is a for fun project these tests are super super basic, don't cover all cases, and are just to make sure I am not breaking my interfaces unintentionally
 
 ### ----------------------
 ### CLASSMETHODS / STATIC
@@ -158,3 +163,50 @@ def test_wipe_rag(rag_indexer):
     rag_indexer.wipe_rag()
     assert rag_indexer.chunk_texts == []
     assert rag_indexer.index is None
+
+### ----------------------
+### test_batch_query() - but actually a full test of RAG just using this function so implicitly testing it as well
+### ----------------------
+
+def test_batch_query_full_rag(rag_indexer, test_data_dir):
+    # Collect all test files in data/
+    file_paths = list(test_data_dir.glob('*'))
+    assert file_paths, "No test files found in tests/data/"
+
+    # Add documents to RAG
+    rag_indexer.add_documents(file_paths=file_paths)
+    assert rag_indexer.chunk_texts, "No chunks added to RAG"
+    assert rag_indexer.index is not None
+
+    # Define multiple queries
+    queries = [
+        "What is experience with python does this candidate have?",
+        "Extract key skills discussed in the text.",
+        "What is the candidate's name?",
+    ]
+
+    # Run batch query
+    results = rag_indexer.batch_query(query_texts=queries, top_k=5)
+    assert isinstance(results, dict)
+    assert set(results.keys()) == set(queries)
+    logger.info(results)
+
+    for query, query_results in results.items():
+        assert isinstance(query_results, list)
+        for result in query_results:
+            assert "text" in result
+            assert "similarity" in result
+
+    # Wipe everything
+    rag_indexer.wipe_rag()
+
+    # Post-wipe asserts
+    assert rag_indexer.index is None
+    assert rag_indexer.chunk_texts == []
+    assert rag_indexer.chunk_hashes == set()
+
+    vector_store = rag_indexer.vector_store
+    assert not (vector_store / "faiss_index.idx").exists()
+    assert not (vector_store / "chunk_texts.json").exists()
+    assert not (vector_store / "chunk_hashes.json").exists()
+
