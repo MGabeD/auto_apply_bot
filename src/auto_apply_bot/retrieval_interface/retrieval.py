@@ -1,7 +1,7 @@
 import hashlib
 import os
 import json
-from typing import Union, List
+from typing import Union, List, Optional
 from pathlib import Path
 from xml.dom.minidom import Document
 import numpy as np
@@ -29,10 +29,12 @@ LOADER_MAP = {
 class LocalRagIndexer:
     loader_map: dict = LOADER_MAP
 
-    def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2", lazy_embedder: bool = False):
         self.project_dir: Path = Path(project_dir)
         self.vector_store: Path = (project_dir / "vector_store")
         self.embedder_model_name = embed_model_name
+        self.lazy_embedder = lazy_embedder
+        self.embedder: Optional[SentenceTransformer] = None if lazy_embedder else SentenceTransformer(embed_model_name)
         self.index: Union[faiss.IndexFlatL2, None] = None
         self.chunk_texts: List[str] = []
         self.chunk_hashes: set = set()
@@ -133,15 +135,25 @@ class LocalRagIndexer:
         :return: numpy array of embedded chunks
         """
         embeddings_list = []
-        embedder = SentenceTransformer(self.embedder_model_name)
+        if self.lazy_embedder:
+            logger.info("Just in time embedder mode. Initializing SentenceTransformer")
+            embedder = SentenceTransformer(self.embedder_model_name)
+        else:
+            logger.info("Pre-initialized embedder mode. Using existing SentenceTransformer")
+            embedder = self.embedder
+
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
-            batch_embeddings = embedder.encode(batch, convert_to_numpy=True)
+            batch_embeddings = self.embedder.encode(batch, convert_to_numpy=True)
             embeddings_list.append(batch_embeddings)
+        
         logger.info(f"Embedded {len(chunks)} chunks in batches of {batch_size}")
-        del embedder
-        torch.cuda.empty_cache()
-        logger.info("Emptied CUDA cache (SentenceTransformer cleanup)")
+
+        if self.lazy_embedder:
+            del embedder
+            torch.cuda.empty_cache()
+            logger.info("Emptied CUDA cache (SentenceTransformer cleanup)")
+            
         return np.vstack(embeddings_list)
 
     def _filter_duplicates(self, chunks: List[str]) -> List[str]:

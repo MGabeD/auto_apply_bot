@@ -25,3 +25,8 @@ def temp_project_dir():
 @pytest.fixture
 def rag_indexer(temp_project_dir, mock_embedder):
     return LocalRagIndexer(project_dir=temp_project_dir)
+
+
+@pytest.fixture
+def test_data_dir():
+    return Path(__file__).parent / "data"
