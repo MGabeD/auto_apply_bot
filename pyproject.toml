@@ -54,7 +54,6 @@ test = [
 where = ["src", "."]
 namespaces = true
 include = [
-    # NB: this is required so that we don't include notebooks+tests+scripts+.. top level folders
     "auto_apply_bot*",
     "tests*",
 ]
