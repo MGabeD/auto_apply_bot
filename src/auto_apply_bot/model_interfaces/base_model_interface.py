@@ -23,6 +23,7 @@ class BaseModelInterface:
         :param bnb_config: Optional quantization config (e.g., BitsAndBytesConfig)
         """
         self.model_name = model_name
+        self.active_model = model_name
         self.device = device
         self.bnb_config = bnb_config
         self.pipe = None
@@ -30,7 +31,7 @@ class BaseModelInterface:
     def __enter__(self):
         torch.cuda.empty_cache()
         log_free_memory()
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
+        tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
 
         try:
             model = self._load_gpu_only()
@@ -50,7 +51,7 @@ class BaseModelInterface:
     def _load_gpu_only(self):
         logger.info("Attempting full GPU load...")
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
+            self.active_model,
             device_map={"": 0} if self.device == "cuda" else {"": "cpu"},
             quantization_config=self.bnb_config,
             trust_remote_code=True
@@ -61,7 +62,7 @@ class BaseModelInterface:
     def _load_with_fallback(self):
         with init_empty_weights():
             model_init = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
+                self.active_model,
                 quantization_config=self.bnb_config,
                 trust_remote_code=True
             )
@@ -71,7 +72,7 @@ class BaseModelInterface:
             no_split_module_classes=["DecoderLayer"]
         )
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
+            self.active_model,
             device_map=device_map,
             quantization_config=self.bnb_config,
             trust_remote_code=True
