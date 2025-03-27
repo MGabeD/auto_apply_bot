@@ -11,20 +11,13 @@ from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
 from auto_apply_bot.logger import get_logger
 from auto_apply_bot import resolve_project_source
+from auto_apply_bot.loader import load_documents, LOADER_MAP
 from contextlib import contextmanager
 import torch
 
 
 logger = get_logger(__name__)
 PROJECT_PATH = resolve_project_source()
-
-
-LOADER_MAP = {
-    ".pdf": PyPDFLoader,
-    ".txt": lambda path: TextLoader(path, encoding="utf-8"),
-    ".docx": Docx2txtLoader,
-    ".doc": UnstructuredWordDocumentLoader,
-}
 
 
 class LocalRagIndexer:
@@ -109,32 +102,12 @@ class LocalRagIndexer:
         """
         return (self.vector_store / "faiss_index.idx").exists() and (self.vector_store / "chunk_texts.json").exists()
 
-    def load_document(self, filepath: Union[Path, str]) -> List[Document]:
-        """
-        Loads a document from a file path.
-        :param filepath: Path to the document file
-        :return: List of Document objects
-        """
-        ext = os.path.splitext(filepath)[1].lower()
-
-        loader_class = self.loader_map.get(ext)
-        if not loader_class:
-            raise ValueError(f"Unsupported file type: {ext}")
-
-        loader = loader_class(filepath) if not callable(loader_class(filepath)) else loader_class(filepath)
-        docs = loader.load()
-        logger.info(f"Loaded {len(docs)} pages from {filepath}")
-        return docs
-
     def add_documents(self, file_paths: Union[List[str], List[Path]]) -> None:
         """
         Adds documents to the RAG index.
         :param file_paths: List of file paths to add
         """
-        all_docs = []
-        for path in file_paths:
-            docs = self.load_document(path)
-            all_docs.extend(docs)
+        all_docs = load_documents(file_paths, self.loader_map)
 
         chunks = self._chunk_documents(all_docs)
         new_chunks = self._filter_duplicates(chunks)

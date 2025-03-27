@@ -43,22 +43,6 @@ def test_check_index_exists_true(rag_indexer):
     assert rag_indexer._check_index_exists()
 
 ### ----------------------
-### load_document()
-### ----------------------
-
-def test_load_document(monkeypatch, rag_indexer):
-    monkeypatch.setitem(rag_indexer.loader_map, ".txt", DummyLoader)
-    dummy_file = rag_indexer.project_dir / "dummy.txt"
-    dummy_file.write_text("dummy")
-    docs = rag_indexer.load_document(dummy_file)
-    assert len(docs) == 1
-    assert "dummy" in docs[0].page_content
-
-def test_load_document_invalid_extension(rag_indexer):
-    with pytest.raises(ValueError):
-        rag_indexer.load_document("file.unsupported")
-
-### ----------------------
 ### _chunk_documents()
 ### ----------------------
 
