@@ -11,6 +11,7 @@ from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
 from auto_apply_bot.logger import get_logger
 from auto_apply_bot import resolve_project_source
+from auto_apply_bot.loader import load_documents, LOADER_MAP
 from contextlib import contextmanager
 import torch
 
@@ -19,18 +20,13 @@ logger = get_logger(__name__)
 PROJECT_PATH = resolve_project_source()
 
 
-LOADER_MAP = {
-    ".pdf": PyPDFLoader,
-    ".txt": lambda path: TextLoader(path, encoding="utf-8"),
-    ".docx": Docx2txtLoader,
-    ".doc": UnstructuredWordDocumentLoader,
-}
-
-
 class LocalRagIndexer:
     loader_map: dict = LOADER_MAP
 
-    def __init__(self, project_dir: Union[str,Path] = PROJECT_PATH, embed_model_name: str = "all-MiniLM-L6-v2", lazy_embedder: bool = False):
+    def __init__(self, 
+                 project_dir: Union[str,Path] = PROJECT_PATH, 
+                 embed_model_name: str = "BAAI/bge-large-en-v1.5", 
+                 lazy_embedder: bool = False):
         self.project_dir: Path = Path(project_dir)
         self.vector_store: Path = (project_dir / "vector_store")
         self.embedder_model_name = embed_model_name
@@ -79,7 +75,25 @@ class LocalRagIndexer:
                 torch.cuda.empty_cache()
                 logger.info("Lazy embedder cleaned up and CUDA cache cleared")
         else:
+            if self._embedder is None:
+                logger.info(f"Persistent embedder was cleared, re-initializing on demand")
+                self._embedder = SentenceTransformer(self.embedder_model_name)
             yield self._embedder
+
+    def clear_embedder(self):
+        """
+        Clears the persistent embedder.
+        """
+        if self.lazy_embedder:
+            logger.warning("clear_embedder called in lazy mode, this will have no effect")
+            return
+        if self._embedder is not None:
+            del self._embedder
+            self._embedder = None
+            torch.cuda.empty_cache()
+            logger.info("Persistent embedder cleared")
+        else:
+            logger.warning("No persistent embedder to clear")
 
     def _check_index_exists(self) -> bool:
         """
@@ -88,32 +102,12 @@ class LocalRagIndexer:
         """
         return (self.vector_store / "faiss_index.idx").exists() and (self.vector_store / "chunk_texts.json").exists()
 
-    def load_document(self, filepath: Union[Path, str]) -> List[Document]:
-        """
-        Loads a document from a file path.
-        :param filepath: Path to the document file
-        :return: List of Document objects
-        """
-        ext = os.path.splitext(filepath)[1].lower()
-
-        loader_class = self.loader_map.get(ext)
-        if not loader_class:
-            raise ValueError(f"Unsupported file type: {ext}")
-
-        loader = loader_class(filepath) if not callable(loader_class(filepath)) else loader_class(filepath)
-        docs = loader.load()
-        logger.info(f"Loaded {len(docs)} pages from {filepath}")
-        return docs
-
     def add_documents(self, file_paths: Union[List[str], List[Path]]) -> None:
         """
         Adds documents to the RAG index.
         :param file_paths: List of file paths to add
         """
-        all_docs = []
-        for path in file_paths:
-            docs = self.load_document(path)
-            all_docs.extend(docs)
+        all_docs = load_documents(file_paths, self.loader_map)
 
         chunks = self._chunk_documents(all_docs)
         new_chunks = self._filter_duplicates(chunks)

@@ -7,3 +7,6 @@ logs/
 __pycache__/
 profile_data/
 db.sqlite3
+scripts/misc_python/*
+demo_RAG_files/*
+vector_store/*
