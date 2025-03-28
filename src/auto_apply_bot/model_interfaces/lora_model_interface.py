@@ -156,6 +156,16 @@ class LoraModelInterface(BaseModelInterface):
         model.save_pretrained(save_path)
         logger.info(f"LoRA adapter weights saved to {save_path}")
         return save_path
+    
+    def load_adapter(self, adapter_name: str):
+        adapter_path = self.lora_weights_dir / adapter_name
+        if not adapter_path.exists():
+            raise FileNotFoundError(f"Adapter {adapter_name} does not exist")
+        self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
+
+    def list_available_adapters(self) -> List[str]:
+        return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
 
 
 class LoraTrainingDataset(Dataset):
