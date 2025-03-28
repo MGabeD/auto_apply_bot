@@ -37,3 +37,11 @@ def load_documents(file_paths: List[Union[str, Path]], loader_map_override: Opti
         all_docs.extend(docs)
         logger.info(f"Loaded {len(docs)} documents from {path}")
     return all_docs
+
+
+def load_texts_from_files(file_paths: List[Union[str, Path]]) -> List[str]:
+    """
+    Loads documents using load_documents and extracts clean page_content strings.
+    """
+    docs = load_documents(file_paths)
+    return [doc.page_content.strip() for doc in docs if doc.page_content.strip()]
