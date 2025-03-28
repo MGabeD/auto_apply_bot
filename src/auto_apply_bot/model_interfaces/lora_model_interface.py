@@ -20,10 +20,75 @@ class LoraModelInterface(BaseModelInterface):
                  model_name: str = "deepseek-ai/deepseek-llm-7b-chat",
                  device: str = "cuda",
                  lora_weights_dir: Optional[str] = None,
+                 lora_weights_file_override: Optional[str] = None,
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True)):
         super().__init__(model_name, device, bnb_config)
         self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_project_source() / "lora_weights" / model_name.split("/")[-1]
         self.lora_weights_dir.mkdir(parents=True, exist_ok=True)
+        self.lora_weights_file_override = lora_weights_file_override
+        self.tokenizer = None
+        self.base_model = None
+        self.model = None
+
+    def __enter__(self):
+        torch.cuda.empty_cache()
+        self._load_tokenizer()
+        self._load_base_model()
+        self._load_model_with_adapter()
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.pipe = None
+        self.model = None
+        self.tokenizer = None
+        self.base_model = None
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        logger.info("Pipeline cleaned up and CUDA memory released.")
+
+    def _load_tokenizer(self):
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
+
+    def _load_base_model(self):
+        if self.base_model is None:
+            self.base_model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                device_map="auto",
+                quantization_config=self.bnb_config,
+                trust_remote_code=True
+            )
+
+    def _get_latest_adapter_path(self) -> Optional[Path]:
+        adapter_dirs = list(self.lora_weights_dir.glob("lora_*"))
+        return max(adapter_dirs, key=lambda p: p.stat().st_mtime) if adapter_dirs else None
+
+    def _load_model_with_adapter(self):
+        if self.lora_weights_file_override:
+            adapter_path = self.lora_weights_dir / self.lora_weights_file_override
+            if not adapter_path.exists():
+                raise FileNotFoundError(f"LoRA override path {adapter_path} does not exist.")
+            logger.info(f"Using override LoRA adapter from {adapter_path}")
+        else:
+            adapter_path = self._get_latest_adapter_path()
+            if adapter_path:
+                logger.info(f"Loading latest LoRA adapter from {adapter_path}")
+            else:
+                logger.warning("No LoRA adapter found. Using base model only.")
+                self.model = self.base_model
+                return
+
+        self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+
+    def _load_model_with_latest_adapter(self):
+        adapter_path = self._get_latest_adapter_path()
+        if adapter_path:
+            logger.info(f"Loading latest LoRA adapter from {adapter_path}")
+            self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+        else:
+            logger.warning("No LoRA adapter found. Using base model only.")
+            self.model = self.base_model
 
     def _generate_lora_dirname(self) -> str:
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
@@ -91,28 +156,6 @@ class LoraModelInterface(BaseModelInterface):
         model.save_pretrained(save_path)
         logger.info(f"LoRA adapter weights saved to {save_path}")
         return save_path
-
-    def load_or_prepare_inference_pipeline(self, lora_weights_path: Optional[str] = None):
-        """
-        Loads the model pipeline. If LoRA weights are provided, loads the adapter into the base model.
-        """
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
-        base_model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            device_map="auto",
-            quantization_config=self.bnb_config,
-            trust_remote_code=True
-        )
-
-        if lora_weights_path and Path(lora_weights_path).exists():
-            logger.info(f"Loading LoRA adapter from {lora_weights_path}")
-            model = PeftModel.from_pretrained(base_model, lora_weights_path)
-        else:
-            logger.warning("No LoRA adapter provided or found. Running base model only.")
-            model = base_model
-
-        self.pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, device=0 if self.device == "cuda" else -1)
-        logger.info("Model pipeline initialized.")
 
 
 class LoraTrainingDataset(Dataset):
