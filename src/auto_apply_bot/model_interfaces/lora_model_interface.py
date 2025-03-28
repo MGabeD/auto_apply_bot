@@ -81,27 +81,18 @@ class LoraModelInterface(BaseModelInterface):
 
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
 
-    def _load_model_with_latest_adapter(self):
-        adapter_path = self._get_latest_adapter_path()
-        if adapter_path:
-            logger.info(f"Loading latest LoRA adapter from {adapter_path}")
-            self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        else:
-            logger.warning("No LoRA adapter found. Using base model only.")
-            self.model = self.base_model
-
     def _generate_lora_dirname(self) -> str:
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
 
-    def prepare_lora_model(self):
-        logger.info(f"Preparing LoRA model for {self.model_name}")
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_name, 
+    def init_new_lora_for_training(self):
+        logger.info(f"Initializing new LoRA model for training: {self.model_name}")
+        base = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
             device_map="auto",
             quantization_config=self.bnb_config,
             trust_remote_code=True,
         )
-        model = prepare_model_for_kbit_training(model)
+        base = prepare_model_for_kbit_training(base)
 
         lora_config = LoraConfig(
             r=8,
@@ -111,19 +102,22 @@ class LoraModelInterface(BaseModelInterface):
             bias="none",
             task_type=TaskType.CAUSAL_LM,
         )
-        model = get_peft_model(model, lora_config)
 
-        logger.info(f"LoRA model prepared for {self.model_name}")
-        return model
+        self.model = get_peft_model(base, lora_config)
+        logger.info("New LoRA model initialized and assigned to self.model")
 
-    def fine_tune(self,
-                  model, 
-                  tokenizer,
-                  train_dataset,
-                  output_subdir_override: Optional[str] = None,
-                  training_args_override: Optional[dict] = None,
-                  trainer_overrides: Optional[dict] = None,
-                  ) -> Path:
+    def fine_tune(self, 
+                  train_dataset, 
+                  output_subdir_override: Optional[str] = None, 
+                  training_args_override: Optional[dict] = None, 
+                  trainer_overrides: Optional[dict] = None) -> Path:
+        """
+        Fine-tunes the current LoRA model on a dataset using PEFT and HuggingFace Trainer.
+        Saves to a subdirectory under the lora_weights_dir.
+        """
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model and tokenizer must be loaded before fine-tuning. Use within a context manager.")
+
         logger.info(f"Fine-tuning {self.model_name}")
         output_name = output_subdir_override or self._generate_lora_dirname()
         save_path = self.lora_weights_dir / output_name
@@ -144,8 +138,8 @@ class LoraModelInterface(BaseModelInterface):
         )
 
         trainer = Trainer(
-            model=model,
-            tokenizer=tokenizer,
+            model=self.model,
+            tokenizer=self.tokenizer,
             args=training_args,
             train_dataset=train_dataset,
             **(trainer_overrides or {})
@@ -153,8 +147,9 @@ class LoraModelInterface(BaseModelInterface):
 
         logger.info("Starting LoRA fine-tuning...")
         trainer.train()
-        model.save_pretrained(save_path)
+        self.model.save_pretrained(save_path)
         logger.info(f"LoRA adapter weights saved to {save_path}")
+        self.last_trained_adapter_path = save_path
         return save_path
     
     def load_adapter(self, adapter_name: str):
@@ -166,6 +161,11 @@ class LoraModelInterface(BaseModelInterface):
 
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
+
+    def refresh_pipeline(self):
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
 
 
 class LoraTrainingDataset(Dataset):
