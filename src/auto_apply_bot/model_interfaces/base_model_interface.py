@@ -40,7 +40,7 @@ class BaseModelInterface:
             self.model = self._load_with_fallback()
 
     def _load_pipeline(self):
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
     def __enter__(self):
         torch.cuda.empty_cache()
@@ -55,6 +55,7 @@ class BaseModelInterface:
         self.pipe = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
+        del self.model
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
     def _load_gpu_only(self):

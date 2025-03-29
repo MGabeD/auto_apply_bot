@@ -1,8 +1,7 @@
 from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
 from auto_apply_bot.logger import get_logger
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments, Trainer, pipeline, PreTrainedTokenizer, DataCollatorForLanguageModeling    
-from peft import get_peft_model, LoraConfig, TaskType, PeftModel
-from peft.tuners.lora import prepare_model_for_kbit_training
+from peft import get_peft_model, LoraConfig, TaskType, PeftModel, prepare_model_for_kbit_training
 import torch
 from torch.utils.data import Dataset
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Optional, List
 from datetime import datetime
 from auto_apply_bot import resolve_project_source
 from auto_apply_bot.loader import load_texts_from_files
+from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory
 
 
 logger = get_logger(__name__)
@@ -21,6 +21,7 @@ class LoraModelInterface(BaseModelInterface):
                  device: str = "cuda",
                  lora_weights_dir: Optional[str] = None,
                  lora_weights_file_override: Optional[str] = None,
+                 mode: str = "inference",
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True, 
                                                                      llm_int8_threshold=6.0,
                                                                      llm_int8_has_fp16_weight=False)):
@@ -30,10 +31,26 @@ class LoraModelInterface(BaseModelInterface):
         self.lora_weights_file_override = lora_weights_file_override
         self.base_model = None
         self.model = None
+        self.mode = mode
 
     def _load_model(self):
         self._load_base_model()
         self._load_model_with_adapter()
+
+    def __enter__(self):
+        torch.cuda.empty_cache()
+        log_free_memory()
+        if self.mode == "inference":
+            self._load_tokenizer()
+            self._load_model()
+            self._load_pipeline()
+        elif self.mode == "training":
+            self.init_new_lora_for_training()
+            self._load_pipeline()
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+        log_free_memory()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.pipe = None
@@ -75,7 +92,7 @@ class LoraModelInterface(BaseModelInterface):
                 logger.warning("No LoRA adapter found. Using base model only.")
                 self.model = self.base_model
                 return
-
+        
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
 
     def _generate_lora_dirname(self) -> str:
@@ -83,13 +100,16 @@ class LoraModelInterface(BaseModelInterface):
 
     def init_new_lora_for_training(self):
         logger.info(f"Initializing new LoRA model for training: {self.model_name}")
+        logger.info("Clearing CUDA memory...")
+        torch.cuda.empty_cache()
+        self._load_tokenizer()
         base = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             device_map="auto",
             quantization_config=self.bnb_config,
             trust_remote_code=True,
         )
-        base = prepare_model_for_kbit_training(base)
+        self.base_model = prepare_model_for_kbit_training(base)
 
         lora_config = LoraConfig(
             r=8,
@@ -159,8 +179,10 @@ class LoraModelInterface(BaseModelInterface):
         adapter_path = self.lora_weights_dir / adapter_name
         if not adapter_path.exists():
             raise FileNotFoundError(f"Adapter {adapter_name} does not exist")
+        if self.tokenizer is None:
+            self._load_tokenizer()
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
@@ -168,7 +190,7 @@ class LoraModelInterface(BaseModelInterface):
     def refresh_pipeline(self):
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
 
 class LoraTrainingDataset(Dataset):
