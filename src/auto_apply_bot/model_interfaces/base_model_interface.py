@@ -27,18 +27,27 @@ class BaseModelInterface:
         self.device = device
         self.bnb_config = bnb_config
         self.pipe = None
+        self.tokenizer = None
+
+    def _load_tokenizer(self):
+        self.tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
+
+    def _load_model(self) -> AutoModelForCausalLM:
+        try:
+            self.model = self._load_gpu_only()
+        except Exception as e:
+            logger.warning(f"Falling back to GPU+CPU split due to: {e}")
+            self.model = self._load_with_fallback()
+
+    def _load_pipeline(self):
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
 
     def __enter__(self):
         torch.cuda.empty_cache()
         log_free_memory()
-        tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
-
-        try:
-            model = self._load_gpu_only()
-        except Exception as e:
-            logger.warning(f"Falling back to GPU+CPU split due to: {e}")
-            model = self._load_with_fallback()
-        self.pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
+        self._load_tokenizer()
+        self._load_model()
+        self._load_pipeline()
         log_free_memory()
         return self
 
@@ -104,4 +113,8 @@ class BaseModelInterface:
         if post_process_fn:
             return [post_process_fn(o[0]["generated_text"]) for o in outputs]
         else:
-            return [o[0]["generated_text"] for o in outputs]
+            return [
+                o[0]["generated_text"].replace(prompt, "").strip()
+                for o, prompt in zip(outputs, prompts)
+            ]
+

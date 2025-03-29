@@ -1,6 +1,6 @@
 from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
 from auto_apply_bot.logger import get_logger
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments, Trainer, pipeline, PreTrainedTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments, Trainer, pipeline, PreTrainedTokenizer, DataCollatorForLanguageModeling    
 from peft import get_peft_model, LoraConfig, TaskType, PeftModel
 from peft.tuners.lora import prepare_model_for_kbit_training
 import torch
@@ -21,22 +21,19 @@ class LoraModelInterface(BaseModelInterface):
                  device: str = "cuda",
                  lora_weights_dir: Optional[str] = None,
                  lora_weights_file_override: Optional[str] = None,
-                 bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True)):
+                 bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True, 
+                                                                     llm_int8_threshold=6.0,
+                                                                     llm_int8_has_fp16_weight=False)):
         super().__init__(model_name, device, bnb_config)
         self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_project_source() / "lora_weights" / model_name.split("/")[-1]
         self.lora_weights_dir.mkdir(parents=True, exist_ok=True)
         self.lora_weights_file_override = lora_weights_file_override
-        self.tokenizer = None
         self.base_model = None
         self.model = None
 
-    def __enter__(self):
-        torch.cuda.empty_cache()
-        self._load_tokenizer()
+    def _load_model(self):
         self._load_base_model()
         self._load_model_with_adapter()
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer, device=0 if self.device == "cuda" else -1)
-        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.pipe = None
@@ -107,10 +104,10 @@ class LoraModelInterface(BaseModelInterface):
         logger.info("New LoRA model initialized and assigned to self.model")
 
     def fine_tune(self, 
-                  train_dataset, 
-                  output_subdir_override: Optional[str] = None, 
-                  training_args_override: Optional[dict] = None, 
-                  trainer_overrides: Optional[dict] = None) -> Path:
+              train_dataset, 
+              output_subdir_override: Optional[str] = None, 
+              training_args_override: Optional[dict] = None, 
+              trainer_overrides: Optional[dict] = None) -> Path:
         """
         Fine-tunes the current LoRA model on a dataset using PEFT and HuggingFace Trainer.
         Saves to a subdirectory under the lora_weights_dir.
@@ -137,11 +134,17 @@ class LoraModelInterface(BaseModelInterface):
             **(training_args_override or {})
         )
 
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=self.tokenizer,
+            mlm=False  
+        )
+
         trainer = Trainer(
             model=self.model,
             tokenizer=self.tokenizer,
             args=training_args,
             train_dataset=train_dataset,
+            data_collator=data_collator,  # 👈 Now included
             **(trainer_overrides or {})
         )
 
