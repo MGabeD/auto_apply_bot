@@ -61,6 +61,9 @@ class LoraModelInterface(BaseModelInterface):
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
+    def _load_pipeline(self):
+        self.refresh_pipeline()
+
     def _load_tokenizer(self):
         if self.tokenizer is None:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
@@ -182,7 +185,7 @@ class LoraModelInterface(BaseModelInterface):
         if self.tokenizer is None:
             self._load_tokenizer()
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
+        self.refresh_pipeline()
 
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
@@ -190,7 +193,10 @@ class LoraModelInterface(BaseModelInterface):
     def refresh_pipeline(self):
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
+        if hasattr(self.model, "model"):
+            self.pipe = pipeline("text-generation", model=self.model.model, tokenizer=self.tokenizer)
+        else:
+            self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
 
 class LoraTrainingDataset(Dataset):

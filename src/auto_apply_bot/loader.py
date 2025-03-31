@@ -44,4 +44,5 @@ def load_texts_from_files(file_paths: List[Union[str, Path]]) -> List[str]:
     Loads documents using load_documents and extracts clean page_content strings.
     """
     docs = load_documents(file_paths)
+    logger.info(f"Loaded {len(docs)} documents")
     return [doc.page_content.strip() for doc in docs if doc.page_content.strip()]

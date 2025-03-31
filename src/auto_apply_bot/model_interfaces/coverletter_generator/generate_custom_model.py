@@ -21,7 +21,6 @@ def main():
     with CoverLetterModelInterface(mode="training") as model_interface:
         output_path = model_interface.train_on_existing_letters(
             [str(p) for p in file_paths],
-            output_subdir_override="rag_element_finetune"
         )
         logger.info(f"LoRA model fine-tuned and saved at: {output_path}")
 
