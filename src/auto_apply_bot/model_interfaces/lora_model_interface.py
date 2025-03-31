@@ -41,7 +41,7 @@ class LoraModelInterface(BaseModelInterface):
         torch.cuda.empty_cache()
         log_free_memory()
         if self.mode == "inference":
-            self._load_tokenizer()
+            super()._load_tokenizer()
             self._load_model()
             self._load_pipeline()
         elif self.mode == "training":
@@ -63,10 +63,6 @@ class LoraModelInterface(BaseModelInterface):
 
     def _load_pipeline(self):
         self.refresh_pipeline()
-
-    def _load_tokenizer(self):
-        if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
 
     def _load_base_model(self):
         if self.base_model is None:
@@ -105,7 +101,7 @@ class LoraModelInterface(BaseModelInterface):
         logger.info(f"Initializing new LoRA model for training: {self.model_name}")
         logger.info("Clearing CUDA memory...")
         torch.cuda.empty_cache()
-        self._load_tokenizer()
+        super()._load_tokenizer()
         base = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             device_map="auto",
@@ -183,7 +179,7 @@ class LoraModelInterface(BaseModelInterface):
         if not adapter_path.exists():
             raise FileNotFoundError(f"Adapter {adapter_name} does not exist")
         if self.tokenizer is None:
-            self._load_tokenizer()
+            super()._load_tokenizer()
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
         self.refresh_pipeline()
 

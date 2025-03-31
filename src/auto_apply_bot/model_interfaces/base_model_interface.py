@@ -30,7 +30,8 @@ class BaseModelInterface:
         self.tokenizer = None
 
     def _load_tokenizer(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
+         if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
 
     def _load_model(self) -> AutoModelForCausalLM:
         try:
