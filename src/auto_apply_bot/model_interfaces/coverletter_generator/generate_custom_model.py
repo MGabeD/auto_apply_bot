@@ -6,7 +6,7 @@ from auto_apply_bot.logger import get_logger
 
 logger = get_logger(__name__)
 
-
+# MARK This is not a good or usable function, this is not production code, as this project is just a for fun tool for me I am leaving in some scripts I have used to train the model
 def main():
     rag_element_dir = resolve_project_source() / "demo_RAG_files"
     if not rag_element_dir.exists():

@@ -2,8 +2,12 @@ from auto_apply_bot.model_interfaces.coverletter_generator.cover_letter_generato
 from auto_apply_bot import resolve_project_source
 from auto_apply_bot.logger import get_logger
 
+
 logger = get_logger(__name__)
 
+
+# MARK This is not a good or usable function, this is not production code, as this project is just a for fun tool for me I am leaving in some scripts I have used to query the 
+#  model before I do anything more complicated with it
 def main():
     job_description = (
         "We’re seeking a software engineer to join our team and help build scalable backend services using Python and AWS. "
