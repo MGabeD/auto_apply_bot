@@ -35,7 +35,7 @@ class LoraModelInterface(BaseModelInterface):
 
     def _load_model(self):
         self._load_base_model()
-        self._load_model_with_adapter()
+        self._load_model_with_lora_adapter()
 
     def __enter__(self):
         torch.cuda.empty_cache()
@@ -61,9 +61,6 @@ class LoraModelInterface(BaseModelInterface):
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
-    def _load_pipeline(self):
-        self.refresh_pipeline()
-
     def _load_base_model(self):
         if self.base_model is None:
             self.base_model = AutoModelForCausalLM.from_pretrained(
@@ -77,7 +74,7 @@ class LoraModelInterface(BaseModelInterface):
         adapter_dirs = list(self.lora_weights_dir.glob("lora_*"))
         return max(adapter_dirs, key=lambda p: p.stat().st_mtime) if adapter_dirs else None
 
-    def _load_model_with_adapter(self):
+    def _load_model_with_lora_adapter(self):
         if self.lora_weights_file_override:
             adapter_path = self.lora_weights_dir / self.lora_weights_file_override
             if not adapter_path.exists():
@@ -181,18 +178,10 @@ class LoraModelInterface(BaseModelInterface):
         if self.tokenizer is None:
             super()._load_tokenizer()
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        self.refresh_pipeline()
+        super()._load_pipeline()
 
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
-
-    def refresh_pipeline(self):
-        if self.model is None or self.tokenizer is None:
-            raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
-        if hasattr(self.model, "model"):
-            self.pipe = pipeline("text-generation", model=self.model.model, tokenizer=self.tokenizer)
-        else:
-            self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
 
 class LoraTrainingDataset(Dataset):

@@ -41,7 +41,13 @@ class BaseModelInterface:
             self.model = self._load_with_fallback()
 
     def _load_pipeline(self):
-        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
+        """
+        This _load_pipeline function is used to load the pipeline for the model. It can work with both regular models which are supported by Huggingface
+        and extract the .model from the model if it is a peft model. Thus, we can run both HuggingFace compatible models and peft models with a single funciton for child classes.
+        """
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
+        self.pipe = pipeline("text-generation", model=getattr(self.model, "model", self.model), tokenizer=self.tokenizer)
 
     def __enter__(self):
         torch.cuda.empty_cache()
