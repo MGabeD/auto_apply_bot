@@ -34,8 +34,12 @@ class LoraModelInterface(BaseModelInterface):
         self.mode = mode
 
     def _load_model(self):
-        self._load_base_model()
-        self._load_model_with_lora_adapter()
+        """
+        Loads the base model (quantized), stores it in base_model, and applies the most recent LoRA adapter if available.
+        """
+        super()._load_model()
+        self.base_model = self.model
+        self._load_lora_adapter()
 
     def __enter__(self):
         torch.cuda.empty_cache()
@@ -61,20 +65,11 @@ class LoraModelInterface(BaseModelInterface):
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
-    def _load_base_model(self):
-        if self.base_model is None:
-            self.base_model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                device_map="auto",
-                quantization_config=self.bnb_config,
-                trust_remote_code=True
-            )
-
     def _get_latest_adapter_path(self) -> Optional[Path]:
         adapter_dirs = list(self.lora_weights_dir.glob("lora_*"))
         return max(adapter_dirs, key=lambda p: p.stat().st_mtime) if adapter_dirs else None
 
-    def _load_model_with_lora_adapter(self):
+    def _load_lora_adapter(self):
         if self.lora_weights_file_override:
             adapter_path = self.lora_weights_dir / self.lora_weights_file_override
             if not adapter_path.exists():
@@ -86,7 +81,6 @@ class LoraModelInterface(BaseModelInterface):
                 logger.info(f"Loading latest LoRA adapter from {adapter_path}")
             else:
                 logger.warning("No LoRA adapter found. Using base model only.")
-                self.model = self.base_model
                 return
         
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
@@ -95,9 +89,13 @@ class LoraModelInterface(BaseModelInterface):
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
 
     def init_new_lora_for_training(self):
+        """
+        Initializes a new LoRA model for training.
+        """
         logger.info(f"Initializing new LoRA model for training: {self.model_name}")
-        logger.info("Clearing CUDA memory...")
-        torch.cuda.empty_cache()
+        if self.device == "cuda":
+            logger.info("Clearing CUDA memory...")
+            torch.cuda.empty_cache()
         super()._load_tokenizer()
         base = AutoModelForCausalLM.from_pretrained(
             self.model_name,
