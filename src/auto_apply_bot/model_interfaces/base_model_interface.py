@@ -50,7 +50,8 @@ class BaseModelInterface:
         self.pipe = pipeline("text-generation", model=getattr(self.model, "model", self.model), tokenizer=self.tokenizer)
 
     def __enter__(self):
-        torch.cuda.empty_cache()
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
         log_free_memory()
         self._load_tokenizer()
         self._load_model()
@@ -60,9 +61,10 @@ class BaseModelInterface:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.pipe = None
+        self.tokenizer = None
+        self.model = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
-        del self.model
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
     def _load_gpu_only(self):
