@@ -5,7 +5,8 @@ from peft import get_peft_model, LoraConfig, TaskType, PeftModel, prepare_model_
 import torch
 from torch.utils.data import Dataset
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Type, Dict
+from types import TracebackType
 from datetime import datetime
 from auto_apply_bot import resolve_project_source
 from auto_apply_bot.loader import load_texts_from_files
@@ -13,6 +14,12 @@ from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memor
 
 
 logger = get_logger(__name__)
+
+
+def maybe_prepare_model(model: torch.nn.Module) -> torch.nn.Module:
+    if not getattr(model, "gradient_checkpointing_disable", None):
+        return prepare_model_for_kbit_training(model)
+    return model
 
 
 class LoraModelInterface(BaseModelInterface):
@@ -28,10 +35,10 @@ class LoraModelInterface(BaseModelInterface):
         self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_project_source() / "lora_weights" / model_name.split("/")[-1]
         self.lora_weights_dir.mkdir(parents=True, exist_ok=True)
         self.lora_weights_file_override = lora_weights_file_override
-        self.base_model = None
-        self.model = None
-        self.last_loaded_adapter_path = None
-        self.last_trained_adapter_path = None
+        self.base_model: Optional[torch.nn.Module] = None
+        self.model: Optional[torch.nn.Module] = None
+        self.last_loaded_adapter_path: Optional[Path] = None
+        self.last_trained_adapter_path: Optional[Path] = None
 
     @property
     def adapter_frozen(self) -> Optional[bool]:
@@ -43,7 +50,7 @@ class LoraModelInterface(BaseModelInterface):
             return None
         return all(not param.requires_grad for param in self.model.parameters())
 
-    def _load_model(self):
+    def _load_model(self) -> None:
         """
         Loads the base model (quantized), stores it in base_model, and applies the most recent LoRA adapter if available.
         """
@@ -51,7 +58,7 @@ class LoraModelInterface(BaseModelInterface):
         self.base_model = self.model
         self._load_lora_adapter()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<LoraModelInterface(model_name={self.model_name}, "
             f"device={self.device}, "
@@ -59,7 +66,7 @@ class LoraModelInterface(BaseModelInterface):
             f"adapter_frozen={self.adapter_frozen})>"
         )
 
-    def __enter__(self):
+    def __enter__(self) -> "LoraModelInterface":
         torch.cuda.empty_cache()
         log_free_memory()
         super()._load_tokenizer()
@@ -68,7 +75,7 @@ class LoraModelInterface(BaseModelInterface):
         log_free_memory()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[Type[Exception]], exc_val: Optional[Exception], exc_tb: Optional[TracebackType]) -> None:
         super().__exit__(exc_type, exc_val, exc_tb)
         self.base_model = None
         self.last_loaded_adapter_path = None
@@ -97,7 +104,7 @@ class LoraModelInterface(BaseModelInterface):
         adapter_dirs = list(self.lora_weights_dir.glob("lora_*"))
         return max(adapter_dirs, key=lambda p: p.stat().st_mtime) if adapter_dirs else None
 
-    def _load_lora_adapter(self):
+    def _load_lora_adapter(self) -> None:
         """
         Applies a LoRA adapter to the base model, using either the latest available or a user-specified adapter override. 
         This method is used during automatic model initialization and avoids reapplying an adapter if already loaded.
@@ -127,7 +134,7 @@ class LoraModelInterface(BaseModelInterface):
     def _generate_lora_dirname(self) -> str:
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
 
-    def init_new_lora_for_training(self, lora_config_override: Optional[dict] = None):
+    def init_new_lora_for_training(self, lora_config_override: Optional[dict] = None) -> None:
         """
         Prepares the already-loaded quantized base model for LoRA training.
         Avoids reloading the model, reducing GPU memory pressure and load time.
@@ -136,9 +143,7 @@ class LoraModelInterface(BaseModelInterface):
 
         if self.base_model is None:
             raise RuntimeError("Base model must be loaded before initializing LoRA.")
-
-        if not any("lora_" in name for name, _ in self.base_model.named_parameters()):
-            self.base_model = prepare_model_for_kbit_training(self.base_model)
+        self.base_model = maybe_prepare_model(self.base_model)
 
         default_config = dict(
             r=8,
@@ -154,7 +159,7 @@ class LoraModelInterface(BaseModelInterface):
         self._load_pipeline()
 
     def fine_tune(self, 
-              train_dataset, 
+              train_dataset: Dataset, 
               output_subdir_override: Optional[str] = None, 
               training_args_override: Optional[dict] = None, 
               trainer_overrides: Optional[dict] = None) -> Path:
@@ -165,7 +170,7 @@ class LoraModelInterface(BaseModelInterface):
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before fine-tuning. Use within a context manager.")
 
-        self.has_loaded_lora_adapter()
+        self.ensure_lora_adapter_loaded()
 
         logger.info(f"Fine-tuning {self.model_name}")
         output_name = output_subdir_override or self._generate_lora_dirname()
@@ -207,7 +212,7 @@ class LoraModelInterface(BaseModelInterface):
         self.last_trained_adapter_path = save_path
         return save_path
     
-    def load_adapter(self, adapter_name: str, force_reload: bool = False):
+    def load_adapter(self, adapter_name: str, force_reload: bool = False) -> None:
         """
         Loads a specific LoRA adapter by name and wraps it around the base model. Skips reloading if the requested adapter is already active. 
         This method is designed for runtime adapter swapping after the initial model load.
@@ -227,12 +232,12 @@ class LoraModelInterface(BaseModelInterface):
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
 
-    def continue_training(self, train_dataset, save_to: Optional[str] = None, **kwargs) -> Path:
+    def continue_training(self, train_dataset: Dataset, save_to: Optional[str] = None, **kwargs) -> Path:
         """
         Continues training on the currently loaded LoRA adapter.
         Saves to the given subdirectory or reuses the last one used.
         """
-        self.has_loaded_lora_adapter()
+        self.ensure_lora_adapter_loaded()
 
         save_name = save_to or (self.last_trained_adapter_path.name if self.last_trained_adapter_path else None)
         if not save_name:
@@ -247,12 +252,15 @@ class LoraModelInterface(BaseModelInterface):
         """
         return isinstance(self.model, PeftModel) and self.last_loaded_adapter_path is not None
     
-    def freeze_lora_adapter(self):
+    def ensure_lora_adapter_loaded(self, error_message: str = "No LoRA adapter is currently loaded.") -> None:
+        if not self.has_loaded_lora_adapter():
+            raise RuntimeError(error_message)
+
+    def freeze_lora_adapter(self) -> None:
         """
         Freezes the LoRA adapter weights, preventing them from being updated during training.
         """
-        if not self.has_loaded_lora_adapter():
-            raise RuntimeError("No LoRA adapter is currently loaded.")
+        self.ensure_lora_adapter_loaded()
         if isinstance(self.model, PeftModel):
             for param in self.model.parameters():
                 param.requires_grad = False
@@ -260,12 +268,11 @@ class LoraModelInterface(BaseModelInterface):
         else:
             logger.warning("Model is not a PeftModel, skipping freezing.")
 
-    def unfreeze_lora_adapter(self):
+    def unfreeze_lora_adapter(self) -> None:
         """
         Unfreezes the LoRA adapter weights, allowing them to be updated during training.
         """
-        if not self.has_loaded_lora_adapter():
-            raise RuntimeError("No LoRA adapter is currently loaded.")
+        self.ensure_lora_adapter_loaded()
         if isinstance(self.model, PeftModel):
             for param in self.model.parameters():
                 param.requires_grad = True
@@ -273,7 +280,7 @@ class LoraModelInterface(BaseModelInterface):
         else:
             logger.warning("Model is not a PeftModel, skipping unfreeze.")
 
-    def get_adapter_config(self) -> dict:
+    def get_adapter_config(self) ->  Dict[str, Optional[str] | Optional[bool] | List[str]]:
         """
         Returns the metadata for the currently loaded LoRA adapter.
         """
@@ -284,7 +291,7 @@ class LoraModelInterface(BaseModelInterface):
             "available_adapters": self.list_available_adapters()
         }
     
-    def reset_lora_adapter(self):
+    def reset_lora_adapter(self) -> None:
         """
         Resets the LoRA adapter to the base model.
         """
@@ -301,7 +308,7 @@ class LoraModelInterface(BaseModelInterface):
 
 
 class LoraTrainingDataset(Dataset):
-    def __init__(self, file_paths: List[str], tokenizer: PreTrainedTokenizer, max_length: int = 512):
+    def __init__(self, file_paths: List[str], tokenizer: PreTrainedTokenizer, max_length: int = 2048) -> None:
         self.samples = []
         raw_texts = load_texts_from_files(file_paths)
         for text in raw_texts:
@@ -318,8 +325,8 @@ class LoraTrainingDataset(Dataset):
                 "labels": encoded["input_ids"].squeeze(0).clone()
             })
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         return self.samples[idx]
