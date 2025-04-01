@@ -40,6 +40,8 @@ class Controller:
         :param skill_parser: Either a SkillParser instance or a dict of constructor kwargs.
         :param rag_engine: Either a LocalRagIndexer instance or a dict of constructor kwargs.
         :param cover_letter_generator: Either a CoverLetterModelInterface instance or a dict of constructor kwargs.
+        :param relevance_formatter: A function that formats a relevance check prompt.
+        :param summarize_formatter: A function that formats a summarize prompt.
         """
         def _resolve_component(value, default_cls):
             if isinstance(value, dict):
@@ -64,19 +66,37 @@ class Controller:
         logger.info(f" - SummarizeFormatter: {type(self.summarize_formatter).__name__}")
 
     def run_full_pipeline(
-        self,
-        job_posting: str,
-        profile_path: str,
-        line_by_line_override: bool = False,
-        top_k_snippets: int = 5,
-        generation_kwargs: Optional[dict] = None
-    ) -> str:
-        skills, qualification_scores = self.extract_skills(job_posting, profile_path, line_by_line_override)
+            self, 
+            job_posting: str, 
+            profile_path: str, 
+            line_by_line_override: bool = False, 
+            top_k_snippets: int = 5, 
+            generation_kwargs: Optional[dict] = None
+            ) -> str:
+
+        with self.skill_parser as parser:
+            skills, qualification_scores = parser.get_job_extracts(
+                job_reqs=job_posting,
+                user_path=profile_path,
+                line_by_line_override=line_by_line_override
+            )
+
         job_aware_queries = self.build_job_aware_queries(job_posting, skills)
+
         rag_results = self.query_rag(job_aware_queries, top_k=top_k_snippets)
-        filtered_chunks = self.filter_relevant_chunks(job_posting, rag_results)
-        summarized_experiences = self.summarize_grouped_chunks(filtered_chunks)
-        cover_letter = self.generate_cover_letter(job_posting, summarized_experiences, **(generation_kwargs or {}))
+
+        with self.skill_parser as parser:
+            filtered_chunks = self.filter_relevant_chunks(job_posting, rag_results)
+
+        with self.cover_letter_generator as generator:
+            summarized_experiences = self.summarize_grouped_chunks(filtered_chunks)
+
+            cover_letter = generator.generate_cover_letter(
+                job_description=job_posting,
+                resume_snippets=summarized_experiences,
+                **(generation_kwargs or {})
+            )
+
         self.last_run_data = {
             "skills": skills,
             "qualification_scores": qualification_scores,
@@ -140,7 +160,7 @@ class Controller:
             prompt = self.summarize_formatter(skill, combined)
             prompts.append(prompt)
 
-        return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=250)
+        return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=1024)
 
     def generate_cover_letter(self, job_posting: str, resume_snippets: list[str], **kwargs) -> str:
         logger.info("Generating final cover letter...")
