@@ -1,8 +1,9 @@
+from types import TracebackType
 from auto_apply_bot.model_interfaces.lora_model_interface import LoraModelInterface, LoraTrainingDataset
 from auto_apply_bot.loader import load_texts_from_files
 from auto_apply_bot.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
-from typing import List, Optional
+from typing import List, Optional, Type
 from pathlib import Path
 import uuid
 
@@ -43,22 +44,32 @@ class CoverLetterModelInterface(LoraModelInterface):
         logger.info(f"Added training example. Total examples: {len(self._feedback_examples)}")
         return len(self._feedback_examples)
 
-    def train_on_feedback(self, output_subdir_override: Optional[str] = None) -> Optional[Path]:
+    def train_on_dialogue_pairs(self, 
+                                dialogue_pairs: Optional[List[tuple[str, str]]] = None,
+                                load_from_buffer: bool = False,
+                                output_subdir_override: Optional[str] = None) -> Optional[Path]:
         """
-        Trains the model on the feedback examples and resets the feedback buffer of examples.
+        Trains the model on the dialogue pairs and resets the dialogue pairs buffer of examples.
         :param output_subdir_override: The subdirectory to save the trained model to.
         :return: The path to the trained model.
         """
-        if not self._feedback_examples:
+        if not load_from_buffer and dialogue_pairs is None:
+            raise ValueError("Either dialogue_pairs must be provided or load_from_buffer must be True.")
+        if load_from_buffer:
+            train_data = self._feedback_examples
+        else:
+            train_data = dialogue_pairs
+        if not train_data:
             logger.warning("No feedback examples to train on. Skipping.")
             return None
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
-        logger.info(f"Traing on {len(self._feedback_examples)} feedback examples.")
-        dataset = DialoguePairDataset(self._feedback_examples, self.tokenizer)
+        logger.info(f"Traing on {len(train_data)} feedback examples.")
+        dataset = DialoguePairDataset(train_data, self.tokenizer)
         self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
-        self.reset_feedback()
+        if load_from_buffer:
+            self.reset_feedback()
         return output_path
 
     def reset_feedback(self):
@@ -67,6 +78,13 @@ class CoverLetterModelInterface(LoraModelInterface):
         """
         logger.info(f"Clearing {len(self._feedback_examples)} feedback examples.")
         self._feedback_examples.clear()
+
+    def __exit__(self, exc_type: type[Exception] | None, exc_val: Exception | None, exc_tb: TracebackType | None) -> None:
+        try:
+            self.train_on_dialogue_pairs(load_from_buffer=True)
+        except Exception as e:
+            logger.error(f"Error training on dialogue pairs: {e}, Didn't train on dialogue pairs.")
+        return super().__exit__(exc_type, exc_val, exc_tb)
 
     def generate_cover_letter(self, job_description: str, resume_snippets: List[str], **kwargs) -> str:
         """
