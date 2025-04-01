@@ -21,7 +21,6 @@ class LoraModelInterface(BaseModelInterface):
                  device: str = "cuda",
                  lora_weights_dir: Optional[str] = None,
                  lora_weights_file_override: Optional[str] = None,
-                 mode: str = "inference",
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True, 
                                                                      llm_int8_threshold=6.0,
                                                                      llm_int8_has_fp16_weight=False)):
@@ -31,8 +30,8 @@ class LoraModelInterface(BaseModelInterface):
         self.lora_weights_file_override = lora_weights_file_override
         self.base_model = None
         self.model = None
-        self.mode = mode
         self.last_loaded_adapter_path = None
+        self.last_trained_adapter_path = None
 
     def _load_model(self):
         """
@@ -45,15 +44,9 @@ class LoraModelInterface(BaseModelInterface):
     def __enter__(self):
         torch.cuda.empty_cache()
         log_free_memory()
-        if self.mode == "inference":
-            super()._load_tokenizer()
-            self._load_model()
-            self._load_pipeline()
-        elif self.mode == "training":
-            self.init_new_lora_for_training()
-            self._load_pipeline()
-        else:
-            raise ValueError(f"Invalid mode: {self.mode}")
+        super()._load_tokenizer()
+        self._load_model()
+        self._load_pipeline()
         log_free_memory()
         return self
 
@@ -63,6 +56,7 @@ class LoraModelInterface(BaseModelInterface):
         self.tokenizer = None
         self.base_model = None
         self.last_loaded_adapter_path = None
+        self.last_trained_adapter_path = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
@@ -88,6 +82,11 @@ class LoraModelInterface(BaseModelInterface):
             else:
                 logger.warning("No LoRA adapter found. Using base model only.")
                 return
+
+        if self.last_loaded_adapter_path == adapter_path:
+            logger.info(f"Adapter {adapter_path} is already loaded. Skipping reload.")
+            return
+
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
         self.last_loaded_adapter_path = adapter_path
 
@@ -96,21 +95,15 @@ class LoraModelInterface(BaseModelInterface):
 
     def init_new_lora_for_training(self):
         """
-        Initializes a new LoRA model for training.
+        Prepares the already-loaded quantized base model for LoRA training.
+        Avoids reloading the model, reducing GPU memory pressure and load time.
         """
-        logger.info(f"Initializing new LoRA model for training: {self.model_name}")
-        if self.device == "cuda":
-            logger.info("Clearing CUDA memory...")
-            torch.cuda.empty_cache()
-        super()._load_tokenizer()
-        base = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            device_map="auto",
-            quantization_config=self.bnb_config,
-            trust_remote_code=True,
-        )
-        self.base_model = prepare_model_for_kbit_training(base)
+        logger.info(f"Preparing LoRA training on loaded model: {self.model_name}")
 
+        if self.base_model is None:
+            raise RuntimeError("Base model must be loaded before initializing LoRA.")
+
+        self.base_model = prepare_model_for_kbit_training(self.base_model)
         lora_config = LoraConfig(
             r=8,
             lora_alpha=16,
@@ -119,9 +112,9 @@ class LoraModelInterface(BaseModelInterface):
             bias="none",
             task_type=TaskType.CAUSAL_LM,
         )
-
-        self.model = get_peft_model(base, lora_config)
-        logger.info("New LoRA model initialized and assigned to self.model")
+        self.model = get_peft_model(self.base_model, lora_config)
+        logger.info("LoRA layers initialized and attached to the base model.")
+        self._load_pipeline()
 
     def fine_tune(self, 
               train_dataset, 
@@ -164,7 +157,7 @@ class LoraModelInterface(BaseModelInterface):
             tokenizer=self.tokenizer,
             args=training_args,
             train_dataset=train_dataset,
-            data_collator=data_collator,  # 👈 Now included
+            data_collator=data_collator,  
             **(trainer_overrides or {})
         )
 
@@ -194,6 +187,27 @@ class LoraModelInterface(BaseModelInterface):
 
     def list_available_adapters(self) -> List[str]:
         return sorted([p.name for p in self.lora_weights_dir.glob("lora_*")])
+
+    def continue_training(self, train_dataset, save_to: Optional[str] = None, **kwargs) -> Path:
+        """
+        Continues training on the currently loaded LoRA adapter.
+        Saves to the given subdirectory or reuses the last one used.
+        """
+        if not isinstance(self.model, PeftModel):
+            raise RuntimeError("No LoRA adapter is currently loaded.")
+
+        save_name = save_to or (self.last_trained_adapter_path.name if self.last_trained_adapter_path else None)
+        if not save_name:
+            raise ValueError("No target directory specified and no previous training directory found.")
+
+        return self.fine_tune(train_dataset, output_subdir_override=save_name, **kwargs)
+    
+    def has_loaded_lora_adapter(self) -> bool:
+        """
+        Checks if a LoRA adapter has been loaded.
+        Returns True if a LoRA adapter is loaded and False otherwise.
+        """
+        return isinstance(self.model, PeftModel) and self.last_loaded_adapter_path is not None
 
 
 class LoraTrainingDataset(Dataset):
