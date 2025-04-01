@@ -32,6 +32,7 @@ class LoraModelInterface(BaseModelInterface):
         self.base_model = None
         self.model = None
         self.mode = mode
+        self.last_loaded_adapter_path = None
 
     def _load_model(self):
         """
@@ -61,6 +62,7 @@ class LoraModelInterface(BaseModelInterface):
         self.model = None
         self.tokenizer = None
         self.base_model = None
+        self.last_loaded_adapter_path = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
@@ -70,6 +72,10 @@ class LoraModelInterface(BaseModelInterface):
         return max(adapter_dirs, key=lambda p: p.stat().st_mtime) if adapter_dirs else None
 
     def _load_lora_adapter(self):
+        """
+        Applies a LoRA adapter to the base model, using either the latest available or a user-specified adapter override. 
+        This method is used during automatic model initialization and avoids reapplying an adapter if already loaded.
+        """
         if self.lora_weights_file_override:
             adapter_path = self.lora_weights_dir / self.lora_weights_file_override
             if not adapter_path.exists():
@@ -82,8 +88,8 @@ class LoraModelInterface(BaseModelInterface):
             else:
                 logger.warning("No LoRA adapter found. Using base model only.")
                 return
-        
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+        self.last_loaded_adapter_path = adapter_path
 
     def _generate_lora_dirname(self) -> str:
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
@@ -170,12 +176,20 @@ class LoraModelInterface(BaseModelInterface):
         return save_path
     
     def load_adapter(self, adapter_name: str):
+        """
+        Loads a specific LoRA adapter by name and wraps it around the base model. Skips reloading if the requested adapter is already active. 
+        This method is designed for runtime adapter swapping after the initial model load.
+        """
         adapter_path = self.lora_weights_dir / adapter_name
         if not adapter_path.exists():
             raise FileNotFoundError(f"Adapter {adapter_name} does not exist")
+        if self.last_loaded_adapter_path == adapter_path:
+            logger.info(f"Adapter {adapter_name} is already loaded. Skipping reload.")
+            return
         if self.tokenizer is None:
             super()._load_tokenizer()
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
+        self.last_loaded_adapter_path = adapter_path
         super()._load_pipeline()
 
     def list_available_adapters(self) -> List[str]:
