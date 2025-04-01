@@ -1,4 +1,4 @@
-from auto_apply_bot.model_interfaces.coverletter_generator.cover_letter_generator import CoverLetterModelInterface
+from auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generator import CoverLetterModelInterface
 from auto_apply_bot import resolve_project_source
 from auto_apply_bot.logger import get_logger
 
