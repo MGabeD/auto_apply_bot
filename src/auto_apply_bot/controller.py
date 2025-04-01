@@ -16,6 +16,9 @@ SummarizeFormatter = Callable[[str, Union[str, List[str]]], str]
 
 
 def _safe_default_override(component: Union[dict, object], name: str) -> Union[dict, object]:
+    """
+    If CUDA is not available, override the device to 'cpu' if it's set to 'cuda' in the constructor kwargs.
+    """
     if not torch.cuda.is_available():
         if isinstance(component, dict) and component.get("device") == "cuda":
             logger.warning(f"CUDA is not available, but {name} is set to use it. Overriding device to 'cpu'.")
@@ -73,7 +76,14 @@ class Controller:
             top_k_snippets: int = 5, 
             generation_kwargs: Optional[dict] = None
             ) -> str:
-
+        """
+        Runs the full pipeline for generating a cover letter.
+        :param job_posting: The job posting to generate a cover letter for.
+        :param profile_path: The path to the user's profile.
+        :param line_by_line_override: Whether to use line-by-line processing.
+        :param top_k_snippets: The number of snippets to retrieve from RAG.
+        :param generation_kwargs: Additional kwargs for the cover letter generator.
+        """
         with self.skill_parser as parser:
             skills, qualification_scores = parser.get_job_extracts(
                 job_reqs=job_posting,
@@ -110,6 +120,12 @@ class Controller:
         return cover_letter
 
     def extract_skills(self, job_posting: str, profile_path: str, line_by_line_override: bool = False) -> tuple[list[str], dict]:
+        """
+        Extracts skills and assesses qualifications from the job posting and profile.
+        :param job_posting: The job posting to extract skills from.
+        :param profile_path: The path to the user's profile.
+        :param line_by_line_override: Whether to use line-by-line processing.
+        """
         logger.info("Extracting skills and assessing qualifications...")
         return self.skill_parser.get_job_extracts(
             job_reqs=job_posting,
@@ -118,15 +134,30 @@ class Controller:
         )
 
     def build_job_aware_queries(self, job_posting: str, skills: list[str]) -> list[str]:
+        """
+        Builds job-aware queries for the RAG engine.
+        :param job_posting: The job posting to build queries from.
+        :param skills: The skills to build queries for.
+        """
         return [
             f"Given the job description: {job_posting}\n\nRetrieve experiences relevant to: '{skill}'" for skill in skills
         ]
 
     def query_rag(self, queries: list[str], top_k: int = 5) -> dict[str, list[dict]]:
+        """
+        Queries the RAG engine with job-aware prompts.
+        :param queries: The queries to query the RAG engine with.
+        :param top_k: The number of results to return.
+        """
         logger.info("Querying RAG engine with job-aware prompts...")
         return self.rag_engine.batch_query(query_texts=queries, top_k=top_k, deduplicate=True)
 
     def filter_relevant_chunks(self, job_posting: str, rag_results: dict[str, list[dict]]) -> dict[str, list[str]]:
+        """
+        Filters the RAG results by LLM relevance check.
+        :param job_posting: The job posting to filter the RAG results by.
+        :param rag_results: The RAG results to filter.
+        """
         logger.info("Filtering RAG results by LLM relevance check...")
 
         prompts = []
@@ -153,6 +184,10 @@ class Controller:
         return relevant_chunks
 
     def summarize_grouped_chunks(self, grouped_chunks: dict[str, list[str]]) -> list[str]:
+        """
+        Summarizes the grouped candidate experiences.
+        :param grouped_chunks: The grouped candidate experiences to summarize.
+        """
         logger.info("Summarizing grouped candidate experiences...")
         prompts = []
         for skill, chunks in grouped_chunks.items():
@@ -163,6 +198,12 @@ class Controller:
         return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=1024)
 
     def generate_cover_letter(self, job_posting: str, resume_snippets: list[str], **kwargs) -> str:
+        """
+        Generates a cover letter.
+        :param job_posting: The job posting to generate a cover letter for.
+        :param resume_snippets: The snippets to include in the cover letter.
+        :param kwargs: Additional kwargs for the cover letter generator.
+        """
         logger.info("Generating final cover letter...")
         return self.cover_letter_generator.generate_cover_letter(
             job_description=job_posting,
