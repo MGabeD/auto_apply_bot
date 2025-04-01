@@ -12,10 +12,6 @@ class Controller:
         logger.info("fooo")
         self.rag_engine = LocalRagIndexer(project_dir=resolve_project_source(), lazy_embedder=lazy_embedder)
 
-        # self.rag_enginer = RAGEngine()S
-        # self.alighnment_checker = AlighnmentChecker()
-        # self.cover_letter_writer = CoverLetterWriter()
-
     def _retrieve_aligned_experiences(self, requirements: list[str]) -> list[str]:
         """
         Retrieve experiences that are aligned with the requirements
