@@ -3,19 +3,37 @@ from auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generat
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
 from auto_apply_bot import resolve_project_source
 from auto_apply_bot.logger import get_logger
-from typing import Optional, Union
+from typing import Optional, Union, List, Callable, Dict
 import torch
+from auto_apply_bot.formatter import summarize_formatter, relevance_formatter
 
 
 logger = get_logger(__name__)
 
 
+RelevanceFormatter = Callable[[str, str, Union[str, List[str]]], str]
+SummarizeFormatter = Callable[[str, Union[str, List[str]]], str]
+
+
+def _safe_default_override(component: Union[dict, object], name: str) -> Union[dict, object]:
+    if not torch.cuda.is_available():
+        if isinstance(component, dict) and component.get("device") == "cuda":
+            logger.warning(f"CUDA is not available, but {name} is set to use it. Overriding device to 'cpu'.")
+            component["device"] = "cpu"
+        elif hasattr(component, "device") and component.device == "cuda":
+            logger.warning(f"CUDA is not available, but {name} is set to use it. Overriding device to 'cpu'.")
+            component.device = "cpu"
+    return component
+
+
 class Controller:
     def __init__(
         self,
-        skill_parser: Union[dict, SkillParser] = {"device": "cuda" if torch.cuda.is_available() else "cpu"},
+        skill_parser: Union[dict, SkillParser] = {"device": "cuda"},
         rag_engine: Union[dict, LocalRagIndexer] = {"project_dir": resolve_project_source(), "lazy_embedder": True},
-        cover_letter_generator: Union[dict, CoverLetterModelInterface] = {"device": "cuda" if torch.cuda.is_available() else "cpu"},
+        cover_letter_generator: Union[dict, CoverLetterModelInterface] = {"device": "cuda"},
+        relevance_formatter: RelevanceFormatter = relevance_formatter,
+        summarize_formatter: SummarizeFormatter = summarize_formatter,
     ):
         """
         Initializes the Controller with optionally pre-instantiated modules or constructor arguments as dicts.
@@ -23,22 +41,27 @@ class Controller:
         :param rag_engine: Either a LocalRagIndexer instance or a dict of constructor kwargs.
         :param cover_letter_generator: Either a CoverLetterModelInterface instance or a dict of constructor kwargs.
         """
-
-        def _build_component(value, default_cls):
+        def _resolve_component(value, default_cls):
             if isinstance(value, dict):
                 return default_cls(**value)
             elif value is not None:
                 return value
             return default_cls()
 
-        self.skill_parser = _build_component(skill_parser, SkillParser)
-        self.rag_engine = _build_component(rag_engine, lambda: LocalRagIndexer(project_dir=resolve_project_source()))
-        self.cover_letter_generator = _build_component(cover_letter_generator, CoverLetterModelInterface)
+        self.skill_parser = _safe_default_override(_resolve_component(skill_parser, SkillParser), "Skill parser")
+        self.rag_engine = _safe_default_override(_resolve_component(rag_engine, lambda: LocalRagIndexer(project_dir=resolve_project_source())), "RAG engine")
+        self.cover_letter_generator = _safe_default_override(_resolve_component(cover_letter_generator, CoverLetterModelInterface), "Cover letter generator")
+        self.relevance_formatter: RelevanceFormatter = relevance_formatter
+        self.summarize_formatter: SummarizeFormatter = summarize_formatter
+    
+        self.last_run_data: Dict[str, object] = {}
 
         logger.info("Controller initialized with components:")
         logger.info(f" - SkillParser: {type(self.skill_parser).__name__}")
         logger.info(f" - LocalRagIndexer: {type(self.rag_engine).__name__}")
         logger.info(f" - CoverLetterModelInterface: {type(self.cover_letter_generator).__name__}")
+        logger.info(f" - RelevanceFormatter: {type(self.relevance_formatter).__name__}")
+        logger.info(f" - SummarizeFormatter: {type(self.summarize_formatter).__name__}")
 
     def run_full_pipeline(
         self,
@@ -53,7 +76,18 @@ class Controller:
         rag_results = self.query_rag(job_aware_queries, top_k=top_k_snippets)
         filtered_chunks = self.filter_relevant_chunks(job_posting, rag_results)
         summarized_experiences = self.summarize_grouped_chunks(filtered_chunks)
-        return self.generate_cover_letter(job_posting, summarized_experiences, **(generation_kwargs or {}))
+        cover_letter = self.generate_cover_letter(job_posting, summarized_experiences, **(generation_kwargs or {}))
+        self.last_run_data = {
+            "skills": skills,
+            "qualification_scores": qualification_scores,
+            "job_aware_queries": job_aware_queries,
+            "rag_results": rag_results,
+            "filtered_chunks": filtered_chunks,
+            "summarized_experiences": summarized_experiences,
+            "cover_letter": cover_letter
+        }
+        logger.info(f"Logging last run data into file", extra={"data": self.last_run_data})
+        return cover_letter
 
     def extract_skills(self, job_posting: str, profile_path: str, line_by_line_override: bool = False) -> tuple[list[str], dict]:
         logger.info("Extracting skills and assessing qualifications...")
@@ -74,26 +108,27 @@ class Controller:
 
     def filter_relevant_chunks(self, job_posting: str, rag_results: dict[str, list[dict]]) -> dict[str, list[str]]:
         logger.info("Filtering RAG results by LLM relevance check...")
+
         prompts = []
         skill_lookup = []
+        match_lookup = []
 
         for skill, matches in rag_results.items():
             for match in matches:
-                prompt = (
-                    f"You are a discerning hiring manager.\n"
-                    f"Given the job description and candidate experience, determine if this is relevant to '{skill}'.\n"
-                    f"Respond with 'Yes' or 'No'.\n\n"
-                    f"Job Description:\n{job_posting}\n\nExperience:\n{match['text']}"
-                )
+                prompt = self.relevance_formatter(skill, job_posting, match["text"])
                 prompts.append(prompt)
                 skill_lookup.append(skill)
+                match_lookup.append(match)
 
         responses = self.skill_parser.run_prompts(prompts)
         relevant_chunks = {skill: [] for skill in rag_results}
 
-        for skill, match, response in zip(skill_lookup, prompts, responses):
+        for skill, match, response in zip(skill_lookup, match_lookup, responses):
             if response.lower().strip().startswith("yes"):
-                relevant_chunks[skill].append(match.split("Experience:\n")[-1].strip())
+                relevant_chunks[skill].append(match["text"].strip())
+
+        if not any(relevant_chunks.values()):
+            logger.warning("No relevant chunks found after LLM filtering.")
 
         return relevant_chunks
 
@@ -102,12 +137,7 @@ class Controller:
         prompts = []
         for skill, chunks in grouped_chunks.items():
             combined = "\n".join(chunks)
-            prompt = (
-                f"Summarize the following experiences related to '{skill}'.\n"
-                f"Focus on specific accomplishments and clearly demonstrated proficiencies.\n\n"
-                f"{combined}\n"
-                f"\nSummary of relevant experience with '{skill}':"
-            )
+            prompt = self.summarize_formatter(skill, combined)
             prompts.append(prompt)
 
         return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=250)

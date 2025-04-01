@@ -1,4 +1,5 @@
 import logging
+import json
 from datetime import datetime
 from pathlib import Path
 from auto_apply_bot import resolve_project_source
@@ -21,6 +22,19 @@ class ColorFormatter(logging.Formatter):
         message = super().format(record)
         return f"{color}{message}{RESET}"
 
+
+class DataInjectingFormatter(logging.Formatter):
+    def format(self, record):
+        base = super().format(record)
+        if hasattr(record, 'data'):
+            try:
+                serialized = json.dumps(record.data, indent=4)
+            except Exception as e:
+                serialized = str(e)
+            return f"{base}\n [data] {serialized}"
+        return base
+
+
 def get_logger(name: str) -> logging.Logger:
     project_root: Path = resolve_project_source()
     logs_dir: Path = project_root / "logs"
@@ -41,7 +55,7 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(stream_handler)
 
         file_handler = logging.FileHandler(log_file_path, mode="a")
-        file_formatter = logging.Formatter(
+        file_formatter = DataInjectingFormatter(
             '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )

@@ -5,13 +5,10 @@ from auto_apply_bot.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
 from typing import List, Optional, Type, Callable
 from pathlib import Path
+from auto_apply_bot.formatter import default_formatter
 
 
 logger = get_logger(__name__)
-
-
-def default_formatter(prompt: str, response: str):
-    return f"### Prompt:\n{prompt.strip()}\n\n### Response:\n{response.strip()}"
 
 
 class CoverLetterModelInterface(LoraModelInterface):
