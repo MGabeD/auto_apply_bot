@@ -10,6 +10,10 @@ from pathlib import Path
 logger = get_logger(__name__)
 
 
+def default_formatter(prompt: str, response: str):
+    return f"### Prompt:\n{prompt.strip()}\n\n### Response:\n{response.strip()}"
+
+
 class CoverLetterModelInterface(LoraModelInterface):
     
     def __init__(self,
@@ -153,10 +157,6 @@ class CoverLetterModelInterface(LoraModelInterface):
             "Provide a strengths/weaknesses analysis and a 1-10 match rating."
         )
         return self.run_prompts([prompt], **kwargs)[0]
-
-
-def default_formatter(prompt: str, response: str):
-    return f"### Prompt:\n{prompt.strip()}\n\n### Response:\n{response.strip()}"
 
 
 class DialoguePairDataset(LoraTrainingDataset):
