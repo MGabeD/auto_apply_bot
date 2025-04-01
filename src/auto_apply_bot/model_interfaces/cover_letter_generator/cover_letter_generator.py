@@ -56,6 +56,7 @@ class CoverLetterModelInterface(LoraModelInterface):
             raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
         logger.info(f"Traing on {len(self._feedback_examples)} feedback examples.")
         dataset = DialoguePairDataset(self._feedback_examples, self.tokenizer)
+        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
         self.reset_feedback()
         return output_path
@@ -110,6 +111,7 @@ class CoverLetterModelInterface(LoraModelInterface):
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
         dataset = LoraTrainingDataset(letter_paths, self.tokenizer)
+        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
 
     def train_on_conversations(self, dialogue_pairs: List[tuple[str, str]], output_subdir_override: Optional[str] = None):
@@ -122,6 +124,7 @@ class CoverLetterModelInterface(LoraModelInterface):
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
         dataset = DialoguePairDataset(dialogue_pairs, self.tokenizer)
+        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
 
 
