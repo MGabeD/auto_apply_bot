@@ -302,28 +302,24 @@ class LoraModelInterface(BaseModelInterface):
 
 class LoraTrainingDataset(Dataset):
     def __init__(self, file_paths: List[str], tokenizer: PreTrainedTokenizer, max_length: int = 512):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-
-        self.samples = load_texts_from_files(file_paths)
+        self.samples = []
+        raw_texts = load_texts_from_files(file_paths)
+        for text in raw_texts:
+            encoded = tokenizer(
+                text,
+                truncation=True,
+                padding="max_length",
+                max_length=max_length,
+                return_tensors="pt"
+            )
+            self.samples.append({
+                "input_ids": encoded["input_ids"].squeeze(0),
+                "attention_mask": encoded["attention_mask"].squeeze(0),
+                "labels": encoded["input_ids"].squeeze(0).clone()
+            })
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        text = self.samples[idx]
-        tokenized = self.tokenizer(
-            text,
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_length,
-            return_tensors="pt"
-        )
-        input_ids = tokenized["input_ids"].squeeze(0)
-        attention_mask = tokenized["attention_mask"].squeeze(0)
-
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "labels": input_ids.clone()
-        }
+        return self.samples[idx]
