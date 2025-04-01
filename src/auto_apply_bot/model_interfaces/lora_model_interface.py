@@ -33,6 +33,16 @@ class LoraModelInterface(BaseModelInterface):
         self.last_loaded_adapter_path = None
         self.last_trained_adapter_path = None
 
+    @property
+    def is_adapter_frozen(self) -> Optional[bool]:
+        """
+        Returns True if all LoRA adapter parameters are frozen (not trainable),
+        False if any are still trainable, or None if no LoRA adapter is loaded.
+        """
+        if not self.has_loaded_lora_adapter():
+            return None
+        return all(not param.requires_grad for param in self.model.parameters())
+
     def _load_model(self):
         """
         Loads the base model (quantized), stores it in base_model, and applies the most recent LoRA adapter if available.
@@ -208,6 +218,32 @@ class LoraModelInterface(BaseModelInterface):
         Returns True if a LoRA adapter is loaded and False otherwise.
         """
         return isinstance(self.model, PeftModel) and self.last_loaded_adapter_path is not None
+    
+    def freeze_lora_adapter(self):
+        """
+        Freezes the LoRA adapter weights, preventing them from being updated during training.
+        """
+        if not self.has_loaded_lora_adapter():
+            raise RuntimeError("No LoRA adapter is currently loaded.")
+        if isinstance(self.model, PeftModel):
+            for param in self.model.parameters():
+                param.requires_grad = False
+            logger.info("LoRA adapter weights frozen.")
+        else:
+            logger.warning("Model is not a PeftModel, skipping freezing.")
+
+    def unfreeze_lora_adapter(self):
+        """
+        Unfreezes the LoRA adapter weights, allowing them to be updated during training.
+        """
+        if not self.has_loaded_lora_adapter():
+            raise RuntimeError("No LoRA adapter is currently loaded.")
+        if isinstance(self.model, PeftModel):
+            for param in self.model.parameters():
+                param.requires_grad = True
+            logger.info("LoRA adapter weights unfrozen.")
+        else:
+            logger.warning("Model is not a PeftModel, skipping unfrozen.")
 
 
 class LoraTrainingDataset(Dataset):
