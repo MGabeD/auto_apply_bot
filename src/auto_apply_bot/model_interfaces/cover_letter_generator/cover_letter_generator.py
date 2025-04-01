@@ -5,7 +5,6 @@ from auto_apply_bot.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
 from typing import List, Optional, Type
 from pathlib import Path
-import uuid
 
 
 logger = get_logger(__name__)
@@ -32,7 +31,7 @@ class CoverLetterModelInterface(LoraModelInterface):
 
     def add_feedback_example(self, prompt: Optional[str] = None, response: Optional[str] = None) -> Optional[int]:
         """
-        Adds a feedback example to the model.j
+        Adds a feedback example to the model.
         :param prompt: The prompt to add the feedback example to.
         :param response: The response to add the feedback example to.
         :return: The number of total feedback examples.
@@ -55,16 +54,15 @@ class CoverLetterModelInterface(LoraModelInterface):
         """
         if not load_from_buffer and dialogue_pairs is None:
             raise ValueError("Either dialogue_pairs must be provided or load_from_buffer must be True.")
+        train_data = dialogue_pairs or []
         if load_from_buffer:
-            train_data = self._feedback_examples
-        else:
-            train_data = dialogue_pairs
-        if not train_data:
+            train_data = train_data + self._feedback_examples
+        if len(train_data) < 1:
             logger.warning("No feedback examples to train on. Skipping.")
             return None
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
-        logger.info(f"Traing on {len(train_data)} feedback examples.")
+        logger.info(f"Training on {len(train_data)} dialogue pairs.")
         dataset = DialoguePairDataset(train_data, self.tokenizer)
         self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
@@ -80,10 +78,15 @@ class CoverLetterModelInterface(LoraModelInterface):
         self._feedback_examples.clear()
 
     def __exit__(self, exc_type: type[Exception] | None, exc_val: Exception | None, exc_tb: TracebackType | None) -> None:
-        try:
-            self.train_on_dialogue_pairs(load_from_buffer=True)
-        except Exception as e:
-            logger.error(f"Error training on dialogue pairs: {e}, Didn't train on dialogue pairs.")
+        """
+        Exits the context manager and trains on the dialogue pairs.
+        """
+        if self._feedback_examples:
+            # Defensive check - yes it adds more depth but will be less error prone
+            try:
+                self.train_on_dialogue_pairs(load_from_buffer=True)
+            except Exception as e:
+                logger.error(f"Error training on dialogue pairs: {e}, Didn't train on dialogue pairs.")
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def generate_cover_letter(self, job_description: str, resume_snippets: List[str], **kwargs) -> str:
