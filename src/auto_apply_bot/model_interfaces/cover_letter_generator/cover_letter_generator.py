@@ -114,19 +114,6 @@ class CoverLetterModelInterface(LoraModelInterface):
         self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
         return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
 
-    def train_on_conversations(self, dialogue_pairs: List[tuple[str, str]], output_subdir_override: Optional[str] = None):
-        """
-        Trains the model on existing dialogue pairs.
-        :param dialogue_pairs: The dialogue pairs to train on.
-        :param output_subdir_override: The subdirectory to save the trained model to.
-        :return: The path to the trained model.
-        """
-        if self.tokenizer is None:
-            raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
-        dataset = DialoguePairDataset(dialogue_pairs, self.tokenizer)
-        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
-        return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
-
 
 class DialoguePairDataset(LoraTrainingDataset):
     def __init__(self, dialogue_pairs: List[tuple[str, str]], tokenizer: PreTrainedTokenizer,  max_length: int = 1024):
