@@ -169,6 +169,11 @@ class LoraModelInterface(BaseModelInterface):
         """
         Fine-tunes the current LoRA model on a dataset using PEFT and HuggingFace Trainer.
         Saves to a subdirectory under the lora_weights_dir.
+        :param train_dataset: The dataset to train on.
+        :param output_subdir_override: The optional subdirectory override for where to save the fine-tuned model to.
+        :param training_args_override: Additional training arguments to pass to the Trainer.
+        :param trainer_overrides: Additional trainer arguments to pass to the Trainer.
+        :return: The path to the saved fine-tuned model.
         """
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before fine-tuning. Use within a context manager.")

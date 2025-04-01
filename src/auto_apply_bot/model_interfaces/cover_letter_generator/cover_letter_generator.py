@@ -27,6 +27,45 @@ class CoverLetterModelInterface(LoraModelInterface):
             lora_weights_file_override=lora_weights_file_override,
             bnb_config=bnb_config
         )
+        self._feedback_examples: List[tuple[str, str]] = []
+
+    def add_feedback_example(self, prompt: Optional[str] = None, response: Optional[str] = None) -> Optional[int]:
+        """
+        Adds a feedback example to the model.j
+        :param prompt: The prompt to add the feedback example to.
+        :param response: The response to add the feedback example to.
+        :return: The number of total feedback examples.
+        """
+        if not prompt or not response:
+            logger.warning("No prompt or response provided. Skipping feedback example.")
+            return
+        self._feedback_examples.append((prompt.strip(), response.strip()))
+        logger.info(f"Added training example. Total examples: {len(self._feedback_examples)}")
+        return len(self._feedback_examples)
+
+    def train_on_feedback(self, output_subdir_override: Optional[str] = None) -> Optional[Path]:
+        """
+        Trains the model on the feedback examples and resets the feedback buffer of examples.
+        :param output_subdir_override: The subdirectory to save the trained model to.
+        :return: The path to the trained model.
+        """
+        if not self._feedback_examples:
+            logger.warning("No feedback examples to train on. Skipping.")
+            return None
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
+        logger.info(f"Traing on {len(self._feedback_examples)} feedback examples.")
+        dataset = DialoguePairDataset(self._feedback_examples, self.tokenizer)
+        output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
+        self.reset_feedback()
+        return output_path
+
+    def reset_feedback(self):
+        """
+        Resets the feedback buffer.
+        """
+        logger.info(f"Clearing {len(self._feedback_examples)} feedback examples.")
+        self._feedback_examples.clear()
 
     def generate_cover_letter(self, job_description: str, resume_snippets: List[str], **kwargs) -> str:
         """
@@ -84,34 +123,6 @@ class CoverLetterModelInterface(LoraModelInterface):
             raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
         dataset = DialoguePairDataset(dialogue_pairs, self.tokenizer)
         return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
-
-    def interactive_training_mode(self, session_id: Optional[str] = None):
-        """
-        Trains the model on existing dialogue pairs.
-        :param session_id: The session ID to save the trained model to.
-        :return: The path to the trained model.
-        """
-        session_id = session_id or str(uuid.uuid4())
-        logger.info(f"Interactive RLHF training session started. Session ID: {session_id}\n")
-        collected_pairs = []
-        try:
-            while True:
-                user_input = input("[You] > ").strip()
-                if user_input.lower() in {"exit", "quit"}:
-                    break
-                response = self.run_prompts([user_input])[0]
-                logger.info(f"[Model] {response}")
-                accept = input("Accept this response for training? (y/n): ").strip().lower()
-                if accept == "y":
-                    collected_pairs.append((user_input, response))
-        except KeyboardInterrupt:
-            logger.error("Session interrupted.")
-
-        if collected_pairs:
-            logger.info(f"Collected {len(collected_pairs)} dialogue pairs. Starting training...")
-            return self.train_on_conversations(collected_pairs, output_subdir_override=f"interactive_{session_id}")
-        else:
-            logger.error("No examples collected. Exiting without training.")
 
 
 class DialoguePairDataset(LoraTrainingDataset):
