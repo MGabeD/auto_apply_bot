@@ -3,7 +3,7 @@ from auto_apply_bot.model_interfaces.lora_model_interface import LoraModelInterf
 from auto_apply_bot.loader import load_texts_from_files
 from auto_apply_bot.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Callable
 from pathlib import Path
 
 
@@ -17,6 +17,7 @@ class CoverLetterModelInterface(LoraModelInterface):
                  device: str = "cuda",
                  lora_weights_dir: Optional[str] = None,
                  lora_weights_file_override: Optional[str] = None,
+                 formatter: Callable[[str, str], str] = default_formatter,
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True,
                                                                      llm_int8_threshold=6.0,
                                                                      llm_int8_has_fp16_weight=False)):
@@ -25,9 +26,10 @@ class CoverLetterModelInterface(LoraModelInterface):
             device=device,
             lora_weights_dir=lora_weights_dir,
             lora_weights_file_override=lora_weights_file_override,
-            bnb_config=bnb_config
+            bnb_config=bnb_config,
         )
         self._feedback_examples: List[tuple[str, str]] = []
+        self.formatter = formatter
 
     # MARK: This section is for handling LoRA training for the cover letter generator
 
@@ -52,6 +54,8 @@ class CoverLetterModelInterface(LoraModelInterface):
                                 output_subdir_override: Optional[str] = None) -> Optional[Path]:
         """
         Trains the model on the dialogue pairs and resets the dialogue pairs buffer of examples.
+        :param dialogue_pairs: The dialogue pairs to train on.
+        :param load_from_buffer: Whether to load the dialogue pairs from the buffer.
         :param output_subdir_override: The subdirectory to save the trained model to.
         :return: The path to the trained model.
         """
@@ -131,7 +135,8 @@ class CoverLetterModelInterface(LoraModelInterface):
             f"Relevant Experience:\n{chr(10).join(resume_snippets)}\n"
             "Begin the cover letter with a warm introduction and end with a confident closing."
         )
-        return self.run_prompts([prompt], **kwargs)[0]
+        wrapped = self.formatter(prompt, "")
+        return self.run_prompts([wrapped], **kwargs)[0]
 
     def assess_experience_against_posting(self, job_description: str, experience_snippets: List[str], **kwargs) -> str:
         """
@@ -150,11 +155,16 @@ class CoverLetterModelInterface(LoraModelInterface):
         return self.run_prompts([prompt], **kwargs)[0]
 
 
+def default_formatter(prompt: str, response: str):
+    return f"### Prompt:\n{prompt.strip()}\n\n### Response:\n{response.strip()}"
+
+
 class DialoguePairDataset(LoraTrainingDataset):
-    def __init__(self, dialogue_pairs: List[tuple[str, str]], tokenizer: PreTrainedTokenizer,  max_length: int = 1024):
+    def __init__(self, dialogue_pairs: List[tuple[str, str]], tokenizer: PreTrainedTokenizer,  max_length: int = 1024, formatter: Callable[[str, str], str] = default_formatter):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.pairs = dialogue_pairs
+        self.formatter = formatter
 
     def __len__(self):
         """
@@ -167,7 +177,7 @@ class DialoguePairDataset(LoraTrainingDataset):
         Returns the dialogue pair at the given index.
         """
         prompt, response = self.pairs[idx]
-        text = f"### Prompt:\n{prompt.strip()}\n\n### Response:\n{response.strip()}"
+        text = self.formatter(prompt, response)
         tokenized = self.tokenizer(
             text,
             truncation=True,
