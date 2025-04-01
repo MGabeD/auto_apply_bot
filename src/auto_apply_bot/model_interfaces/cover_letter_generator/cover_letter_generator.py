@@ -29,6 +29,9 @@ class CoverLetterModelInterface(LoraModelInterface):
         )
         self._feedback_examples: List[tuple[str, str]] = []
 
+    # MARK: This section is for handling LoRA training for the cover letter generator
+
+    # MARK: This sub-section is for handling feedback examples for the cover letter generator
     def add_feedback_example(self, prompt: Optional[str] = None, response: Optional[str] = None) -> Optional[int]:
         """
         Adds a feedback example to the model.
@@ -77,6 +80,30 @@ class CoverLetterModelInterface(LoraModelInterface):
         logger.info(f"Clearing {len(self._feedback_examples)} feedback examples.")
         self._feedback_examples.clear()
 
+    # MARK: This sub-section is for handling training on existing writing samples
+    def train_on_existing_letters(self, letter_paths: List[str], output_subdir_override: Optional[str] = None) -> Optional[Path]:
+        """
+        Trains the model on existing cover letters by wrapping them with a generic prompt.
+        :param letter_paths: The paths to the existing cover letters to train on.
+        :param output_subdir_override: The subdirectory to save the trained model to.
+        :return: The path to the trained model.
+        """
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
+        raw_letters = load_texts_from_files(letter_paths)
+        dialogue_pairs = [
+            ("Write a high-quality, personalized cover letter based on my experience.", letter.strip())
+            for letter in raw_letters if letter.strip()
+        ]
+
+        if not dialogue_pairs:
+            logger.warning("No valid cover letters found. Skipping training.")
+            return None
+
+        logger.info(f"Loaded {len(dialogue_pairs)} cover letters as training pairs.")
+        return self.train_on_dialogue_pairs(dialogue_pairs=dialogue_pairs, output_subdir_override=output_subdir_override)
+
+    # MARK: This __exit__ adds in a training session for RHLF training if there are any feedback examples
     def __exit__(self, exc_type: type[Exception] | None, exc_val: Exception | None, exc_tb: TracebackType | None) -> None:
         """
         Exits the context manager and trains on the dialogue pairs.
@@ -121,19 +148,6 @@ class CoverLetterModelInterface(LoraModelInterface):
             "Provide a strengths/weaknesses analysis and a 1-10 match rating."
         )
         return self.run_prompts([prompt], **kwargs)[0]
-
-    def train_on_existing_letters(self, letter_paths: List[str], output_subdir_override: Optional[str] = None):
-        """
-        Trains the model on existing cover letters.
-        :param letter_paths: The paths to the existing cover letters to train on.
-        :param output_subdir_override: The subdirectory to save the trained model to.
-        :return: The path to the trained model.
-        """
-        if self.tokenizer is None:
-            raise RuntimeError("Tokenizer must be loaded before training. Use within a context manager.")
-        dataset = LoraTrainingDataset(letter_paths, self.tokenizer)
-        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
-        return self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
 
 
 class DialoguePairDataset(LoraTrainingDataset):
