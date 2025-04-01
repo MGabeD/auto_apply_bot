@@ -49,6 +49,7 @@ test = [
     "requests_mock",
     "coverage",
     "webdriver-manager",
+    "pre-commit",
 ]
 
 [tool.setuptools.packages.find]
