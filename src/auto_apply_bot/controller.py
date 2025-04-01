@@ -29,6 +29,22 @@ def _safe_default_override(component: Union[dict, object], name: str) -> Union[d
     return component
 
 
+def ensure_pipe_loaded(module_attr: str):
+    """
+    Decorator to auto-enter and exit the context manager of a model interface
+    if its `.pipe` is not initialized.
+    """
+    def decorator(fn):
+        def wrapper(self, *args, **kwargs):
+            module = getattr(self, module_attr)
+            if getattr(module, "pipe", None) is not None:
+                return fn(self, *args, **kwargs)
+            with module:
+                return fn(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 class Controller:
     def __init__(
         self,
@@ -119,6 +135,7 @@ class Controller:
         logger.info(f"Logging last run data into file", extra={"data": self.last_run_data})
         return cover_letter
 
+    @ensure_pipe_loaded("skill_parser")
     def extract_skills(self, job_posting: str, profile_path: str, line_by_line_override: bool = False) -> tuple[list[str], dict]:
         """
         Extracts skills and assesses qualifications from the job posting and profile.
@@ -152,6 +169,7 @@ class Controller:
         logger.info("Querying RAG engine with job-aware prompts...")
         return self.rag_engine.batch_query(query_texts=queries, top_k=top_k, deduplicate=True)
 
+    @ensure_pipe_loaded("skill_parser")
     def filter_relevant_chunks(self, job_posting: str, rag_results: dict[str, list[dict]]) -> dict[str, list[str]]:
         """
         Filters the RAG results by LLM relevance check.
@@ -183,6 +201,7 @@ class Controller:
 
         return relevant_chunks
 
+    @ensure_pipe_loaded("cover_letter_generator")
     def summarize_grouped_chunks(self, grouped_chunks: dict[str, list[str]]) -> list[str]:
         """
         Summarizes the grouped candidate experiences.
@@ -197,6 +216,7 @@ class Controller:
 
         return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=1024)
 
+    @ensure_pipe_loaded("cover_letter_generator")
     def generate_cover_letter(self, job_posting: str, resume_snippets: list[str], **kwargs) -> str:
         """
         Generates a cover letter.
@@ -210,3 +230,4 @@ class Controller:
             resume_snippets=resume_snippets,
             **kwargs
         )
+
