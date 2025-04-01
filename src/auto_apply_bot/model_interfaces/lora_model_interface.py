@@ -5,7 +5,7 @@ from peft import get_peft_model, LoraConfig, TaskType, PeftModel, prepare_model_
 import torch
 from torch.utils.data import Dataset
 from pathlib import Path
-from typing import Optional, List, Type, Dict
+from typing import Optional, List, Type, Dict, Union
 from types import TracebackType
 from datetime import datetime
 from auto_apply_bot import resolve_project_source
@@ -17,9 +17,11 @@ logger = get_logger(__name__)
 
 
 def maybe_prepare_model(model: torch.nn.Module) -> torch.nn.Module:
-    if not getattr(model, "gradient_checkpointing_disable", None):
+    try:
         return prepare_model_for_kbit_training(model)
-    return model
+    except Exception as e:
+        logger.warning(f"Failed to prepare model for kbit training: {e}")
+        return model
 
 
 class LoraModelInterface(BaseModelInterface):
@@ -35,7 +37,7 @@ class LoraModelInterface(BaseModelInterface):
         self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_project_source() / "lora_weights" / model_name.split("/")[-1]
         self.lora_weights_dir.mkdir(parents=True, exist_ok=True)
         self.lora_weights_file_override = lora_weights_file_override
-        self.base_model: Optional[torch.nn.Module] = None
+        self.base_model: Optional[Union[AutoModelForCausalLM, PeftModel]] = None
         self.model: Optional[torch.nn.Module] = None
         self.last_loaded_adapter_path: Optional[Path] = None
         self.last_trained_adapter_path: Optional[Path] = None
@@ -109,8 +111,7 @@ class LoraModelInterface(BaseModelInterface):
         Applies a LoRA adapter to the base model, using either the latest available or a user-specified adapter override. 
         This method is used during automatic model initialization and avoids reapplying an adapter if already loaded.
         """
-        if self.tokenizer is None:
-            super()._load_tokenizer()
+        self._ensure_tokenizer_loaded()
         if self.lora_weights_file_override:
             adapter_path = self.lora_weights_dir / self.lora_weights_file_override
             if not adapter_path.exists():
@@ -144,7 +145,9 @@ class LoraModelInterface(BaseModelInterface):
         if self.base_model is None:
             raise RuntimeError("Base model must be loaded before initializing LoRA.")
         self.base_model = maybe_prepare_model(self.base_model)
-
+        if "target_modules" not in (lora_config_override or {}):
+            logger.warning("LoRA 'target_modules' not explicitly set. Using default ['q_proj', 'v_proj']. This may not work with all models.")
+        logger.debug(f"Warning for common silent failure: target_modules={lora_config_override.get('target_modules', ['q_proj', 'v_proj'])} if you are running into issues, make sure this is correct")
         default_config = dict(
             r=8,
             lora_alpha=16,
@@ -223,8 +226,7 @@ class LoraModelInterface(BaseModelInterface):
         if not force_reload and self.last_loaded_adapter_path == adapter_path:
             logger.info(f"Adapter {adapter_name} is already loaded. Skipping reload.")
             return
-        if self.tokenizer is None:
-            super()._load_tokenizer()
+        self._ensure_tokenizer_loaded()
         self.model = self._safely_attach_lora_adapter(adapter_path)
         self.last_loaded_adapter_path = adapter_path
         super()._load_pipeline()
@@ -255,6 +257,10 @@ class LoraModelInterface(BaseModelInterface):
     def ensure_lora_adapter_loaded(self, error_message: str = "No LoRA adapter is currently loaded.") -> None:
         if not self.has_loaded_lora_adapter():
             raise RuntimeError(error_message)
+
+    def _ensure_tokenizer_loaded(self) -> None:
+        if self.tokenizer is None:
+            super()._load_tokenizer()
 
     def freeze_lora_adapter(self) -> None:
         """
@@ -308,8 +314,9 @@ class LoraModelInterface(BaseModelInterface):
 
 
 class LoraTrainingDataset(Dataset):
-    def __init__(self, file_paths: List[str], tokenizer: PreTrainedTokenizer, max_length: int = 2048) -> None:
+    def __init__(self, file_paths: List[str], tokenizer: PreTrainedTokenizer, max_length: Optional[int] = None) -> None:
         self.samples = []
+        max_length = max_length or tokenizer.model_max_length
         raw_texts = load_texts_from_files(file_paths)
         for text in raw_texts:
             encoded = tokenizer(

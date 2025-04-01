@@ -1,9 +1,10 @@
-from typing import List, Any, Callable, Optional
+from typing import List, Any, Callable, Optional, Type
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from auto_apply_bot.logger import get_logger
 import torch
 from accelerate import infer_auto_device_map, init_empty_weights
 from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory
+from types import TracebackType
 
 
 logger = get_logger(__name__)
@@ -26,10 +27,10 @@ class BaseModelInterface:
         self.active_model = model_name
         self.device = device
         self.bnb_config = bnb_config
-        self.pipe = None
-        self.tokenizer = None
+        self.pipe: Optional[pipeline] = None
+        self.tokenizer: Optional[AutoTokenizer] = None
 
-    def _load_tokenizer(self):
+    def _load_tokenizer(self) -> None:
          if self.tokenizer is None:
             self.tokenizer = AutoTokenizer.from_pretrained(self.active_model, use_fast=True)
 
@@ -40,7 +41,7 @@ class BaseModelInterface:
             logger.warning(f"Falling back to GPU+CPU split due to: {e}")
             self.model = self._load_with_fallback()
 
-    def _load_pipeline(self):
+    def _load_pipeline(self) -> None:
         """
         This _load_pipeline function is used to load the pipeline for the model. It can work with both regular models which are supported by Huggingface
         and extract the .model from the model if it is a peft model. Thus, we can run both HuggingFace compatible models and peft models with a single funciton for child classes.
@@ -49,7 +50,7 @@ class BaseModelInterface:
             raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
         self.pipe = pipeline("text-generation", model=getattr(self.model, "model", self.model), tokenizer=self.tokenizer)
 
-    def __enter__(self):
+    def __enter__(self) -> "BaseModelInterface":
         if self.device == "cuda":
             torch.cuda.empty_cache()
         log_free_memory()
@@ -59,7 +60,7 @@ class BaseModelInterface:
         log_free_memory()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[Type[Exception]], exc_val: Optional[Exception], exc_tb: Optional[TracebackType]) -> None:
         self.pipe = None
         self.tokenizer = None
         self.model = None
@@ -67,7 +68,7 @@ class BaseModelInterface:
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
-    def _load_gpu_only(self):
+    def _load_gpu_only(self) -> AutoModelForCausalLM:
         logger.info("Attempting full GPU load...")
         model = AutoModelForCausalLM.from_pretrained(
             self.active_model,
@@ -78,7 +79,7 @@ class BaseModelInterface:
         logger.info("Loaded fully on GPU.")
         return model
 
-    def _load_with_fallback(self):
+    def _load_with_fallback(self) -> AutoModelForCausalLM:
         with init_empty_weights():
             model_init = AutoModelForCausalLM.from_pretrained(
                 self.active_model,
