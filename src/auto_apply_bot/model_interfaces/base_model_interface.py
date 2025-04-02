@@ -1,6 +1,6 @@
 from typing import List, Any, Callable, Optional, Type
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 import torch
 from accelerate import infer_auto_device_map, init_empty_weights
 from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory

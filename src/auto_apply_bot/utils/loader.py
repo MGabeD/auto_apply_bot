@@ -1,10 +1,8 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
 from typing import List, Union, Optional
 from pathlib import Path
 from langchain.schema import Document
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 
 
 logger = get_logger(__name__)

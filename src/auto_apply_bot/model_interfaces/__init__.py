@@ -1,5 +1,5 @@
 import torch
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 
 
 logger = get_logger(__name__)

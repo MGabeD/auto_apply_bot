@@ -1,6 +1,6 @@
 from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
-from auto_apply_bot.logger import get_logger
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments, Trainer, pipeline, PreTrainedTokenizer, DataCollatorForLanguageModeling    
+from auto_apply_bot.utils.logger import get_logger
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig, TrainingArguments, Trainer, PreTrainedTokenizer, DataCollatorForLanguageModeling
 from peft import get_peft_model, LoraConfig, TaskType, PeftModel, prepare_model_for_kbit_training
 import torch
 from torch.utils.data import Dataset
@@ -9,8 +9,8 @@ from typing import Optional, List, Type, Dict, Union
 from types import TracebackType
 from datetime import datetime
 from auto_apply_bot import resolve_project_source
-from auto_apply_bot.loader import load_texts_from_files
-from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory
+from auto_apply_bot.utils.loader import load_texts_from_files
+from auto_apply_bot.model_interfaces import log_free_memory
 
 
 logger = get_logger(__name__)

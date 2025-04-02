@@ -1,13 +1,11 @@
 from typing import List, Dict, Optional, Tuple
 import json
 from auto_apply_bot import resolve_project_source
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
-from auto_apply_bot.logger import get_logger
+from transformers import BitsAndBytesConfig
+from auto_apply_bot.utils.logger import get_logger
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from accelerate import infer_auto_device_map, init_empty_weights
-from auto_apply_bot.model_interfaces import determine_batch_size, log_free_memory
+from auto_apply_bot.model_interfaces import determine_batch_size
 from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
 
 

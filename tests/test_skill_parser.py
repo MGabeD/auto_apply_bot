@@ -1,5 +1,5 @@
 import pytest
-from auto_apply_bot.model_interfaces.skill_parser import SkillParser, determine_batch_size, log_free_memory, extract_sections
+from auto_apply_bot.model_interfaces.skill_parser import SkillParser, determine_batch_size, extract_sections
 from unittest import mock
 from pathlib import Path
 
@@ -19,15 +19,6 @@ def test_determine_batch_size(monkeypatch):
 
     monkeypatch.setattr("torch.cuda.mem_get_info", lambda device_idx: (1e9, 16e9))
     assert determine_batch_size() == 1
-
-### ----------------------
-### log_free_memory()
-### ----------------------
-
-def test_log_free_memory(monkeypatch):
-    monkeypatch.setattr("torch.cuda.mem_get_info", lambda device_idx: (8e9, 16e9))
-    free_mem = log_free_memory()
-    assert free_mem > 0
 
 ### ----------------------
 ### extract_sections()

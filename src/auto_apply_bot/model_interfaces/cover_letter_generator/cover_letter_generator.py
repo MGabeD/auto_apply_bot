@@ -1,9 +1,9 @@
 from types import TracebackType
 from auto_apply_bot.model_interfaces.lora_model_interface import LoraModelInterface, LoraTrainingDataset
-from auto_apply_bot.loader import load_texts_from_files
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.loader import load_texts_from_files
+from auto_apply_bot.utils.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
-from typing import List, Optional, Type, Callable
+from typing import List, Optional, Callable
 from pathlib import Path
 from auto_apply_bot.formatter import default_formatter
 
