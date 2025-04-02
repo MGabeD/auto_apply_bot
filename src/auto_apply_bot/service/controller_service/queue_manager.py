@@ -2,6 +2,7 @@ import multiprocessing
 import queue
 import uuid
 import traceback
+import time
 from enum import Enum
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -96,6 +97,20 @@ class ControllerQueueManager:
         self.job_queue.put((job_id, fn_name, args or [], kwargs or {}, timeout_sec))
         logger.info(f"Submitted job {job_id} to function {fn_name} (timeout: {timeout_sec} seconds)")
         return job_id
+    
+    def run_job(self, fn_name: str, args: list = None, kwargs: dict = None, timeout_sec: int = 120) -> JobResult:
+        job_id = self.submit_job(fn_name, args=args, kwargs=kwargs, timeout_sec=timeout_sec)
+        
+        start = time.time()
+        while True:
+            with self._lock:
+                status = self.results[job_id].status
+                if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.TIMEOUT):
+                    return self.results[job_id]
+
+            if time.time() - start > timeout_sec + 1:
+                return JobResult(status=JobStatus.TIMEOUT, error="Timed out waiting for job.")
+            time.sleep(0.1)
 
     def get_job_status(self, job_id: str) -> Optional[JobStatus]:
         with self._lock:
