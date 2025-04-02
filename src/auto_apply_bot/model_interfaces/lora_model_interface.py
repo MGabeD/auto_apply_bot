@@ -8,10 +8,9 @@ from pathlib import Path
 from typing import Optional, List, Type, Dict, Union
 from types import TracebackType
 from datetime import datetime
-from auto_apply_bot import resolve_project_source
 from auto_apply_bot.utils.loader import load_texts_from_files
 from auto_apply_bot.model_interfaces import log_free_memory
-
+from auto_apply_bot import resolve_component_dirs_path
 
 logger = get_logger(__name__)
 
@@ -34,7 +33,7 @@ class LoraModelInterface(BaseModelInterface):
                                                                      llm_int8_threshold=6.0,
                                                                      llm_int8_has_fp16_weight=False)):
         super().__init__(model_name, device, bnb_config)
-        self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_project_source() / "lora_weights" / model_name.split("/")[-1]
+        self.lora_weights_dir = Path(lora_weights_dir) if lora_weights_dir else resolve_component_dirs_path("lora_weights") / model_name.split("/")[-1]
         self.lora_weights_dir.mkdir(parents=True, exist_ok=True)
         self.lora_weights_file_override = lora_weights_file_override
         self.base_model: Optional[Union[AutoModelForCausalLM, PeftModel]] = None

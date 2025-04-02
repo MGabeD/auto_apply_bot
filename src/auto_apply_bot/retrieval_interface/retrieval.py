@@ -9,32 +9,30 @@ import faiss
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from auto_apply_bot.utils.logger import get_logger
-from auto_apply_bot import resolve_project_source
+from auto_apply_bot import resolve_component_dirs_path
 from auto_apply_bot.utils.loader import load_documents, LOADER_MAP
 from contextlib import contextmanager
 import torch
 
 
 logger = get_logger(__name__)
-PROJECT_PATH = resolve_project_source()
+VECTOR_STORE_DIR = resolve_component_dirs_path("vector_store")
 
 
 class LocalRagIndexer:
     loader_map: dict = LOADER_MAP
 
     def __init__(self, 
-                 project_dir: Union[str,Path] = PROJECT_PATH, 
+                 vector_store_dir_override: Union[str,Path] = VECTOR_STORE_DIR, 
                  embed_model_name: str = "BAAI/bge-large-en-v1.5", 
                  lazy_embedder: bool = False):
-        self.project_dir: Path = Path(project_dir)
-        self.vector_store: Path = (project_dir / "vector_store")
-        self.embedder_model_name = embed_model_name
-        self.lazy_embedder = lazy_embedder
+        self.vector_store_dir: Path = vector_store_dir_override
+        self.embedder_model_name: str = embed_model_name
+        self.lazy_embedder: bool = lazy_embedder
         self._embedder: Optional[SentenceTransformer] = None if lazy_embedder else SentenceTransformer(embed_model_name)
         self.index: Union[faiss.IndexFlatL2, None] = None
         self.chunk_texts: List[str] = []
         self.chunk_hashes: set = set()
-        os.makedirs(self.vector_store, exist_ok=True)
 
         if self._check_index_exists():
             self.load()
@@ -106,7 +104,7 @@ class LocalRagIndexer:
         Checks if the RAG index exists.
         :return: True if the index exists, False otherwise
         """
-        return (self.vector_store / "faiss_index.idx").exists() and (self.vector_store / "chunk_texts.json").exists()
+        return (self.vector_store_dir / "faiss_index.idx").exists() and (self.vector_store_dir / "chunk_texts.json").exists()
 
     def add_documents(self, file_paths: Union[List[str], List[Path]]) -> None:
         """
@@ -182,23 +180,23 @@ class LocalRagIndexer:
         """
         Saves the index and metadata.
         """
-        faiss.write_index(self.index, str(self.vector_store / "faiss_index.idx"))
-        with open(self.vector_store / "chunk_texts.json", "w") as f:
+        faiss.write_index(self.index, str(self.vector_store_dir / "faiss_index.idx"))
+        with open(self.vector_store_dir / "chunk_texts.json", "w") as f:
             json.dump(self.chunk_texts, f)
-        with open(self.vector_store / "chunk_hashes.json", "w") as f:
+        with open(self.vector_store_dir / "chunk_hashes.json", "w") as f:
             json.dump(list(self.chunk_hashes), f)
-        logger.info(f"Index and metadata saved to {self.vector_store}")
+        logger.info(f"Index and metadata saved to {self.vector_store_dir}")
 
     def load(self) -> None:
         """
         Loads the index and metadata.
         """
-        self.index = faiss.read_index(str(self.vector_store / "faiss_index.idx"))
-        with open(self.vector_store / "chunk_texts.json", "r") as f:
+        self.index = faiss.read_index(str(self.vector_store_dir / "faiss_index.idx"))
+        with open(self.vector_store_dir / "chunk_texts.json", "r") as f:
             self.chunk_texts = json.load(f)
-        with open(self.vector_store / "chunk_hashes.json", "r") as f:
+        with open(self.vector_store_dir / "chunk_hashes.json", "r") as f:
             self.chunk_hashes = set(json.load(f))
-        logger.info(f"Index and metadata loaded from {self.vector_store}")
+        logger.info(f"Index and metadata loaded from {self.vector_store_dir}")
 
     def query(self,
               query_text: str,
@@ -302,9 +300,9 @@ class LocalRagIndexer:
         self.chunk_hashes = set()
 
         try:
-            index_path = self.vector_store / "faiss_index.idx"
-            chunks_path = self.vector_store / "chunk_texts.json"
-            hashes_path = self.vector_store / "chunk_hashes.json"
+            index_path = self.vector_store_dir / "faiss_index.idx"
+            chunks_path = self.vector_store_dir / "chunk_texts.json"
+            hashes_path = self.vector_store_dir / "chunk_hashes.json"
             for file_path in [index_path, chunks_path, hashes_path]:
                 if file_path.exists():
                     os.remove(file_path)

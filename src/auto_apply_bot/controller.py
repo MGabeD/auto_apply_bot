@@ -1,8 +1,8 @@
 from auto_apply_bot.model_interfaces.skill_parser import SkillParser
 from auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generator import CoverLetterModelInterface
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
-from auto_apply_bot import resolve_project_source
 from auto_apply_bot.utils.logger import get_logger
+from auto_apply_bot import resolve_component_dirs_path
 from typing import Optional, Union, List, Callable, Dict
 import torch
 from auto_apply_bot.formatter import summarize_formatter, relevance_formatter
@@ -33,7 +33,7 @@ class Controller:
     def __init__(
         self,
         skill_parser: Union[dict, SkillParser] = {"device": "cuda"},
-        rag_engine: Union[dict, LocalRagIndexer] = {"project_dir": resolve_project_source(), "lazy_embedder": True},
+        rag_engine: Union[dict, LocalRagIndexer] = {"vector_store_dir_override": resolve_component_dirs_path("vector_store"), "lazy_embedder": True},
         cover_letter_generator: Union[dict, CoverLetterModelInterface] = {"device": "cuda"},
         relevance_formatter: RelevanceFormatter = relevance_formatter,
         summarize_formatter: SummarizeFormatter = summarize_formatter,
@@ -54,7 +54,7 @@ class Controller:
             return default_cls()
 
         self.skill_parser = _safe_default_override(_resolve_component(skill_parser, SkillParser), "Skill parser")
-        self.rag_engine = _safe_default_override(_resolve_component(rag_engine, lambda: LocalRagIndexer(project_dir=resolve_project_source())), "RAG engine")
+        self.rag_engine = _safe_default_override(_resolve_component(rag_engine, LocalRagIndexer), "RAG engine")
         self.cover_letter_generator = _safe_default_override(_resolve_component(cover_letter_generator, CoverLetterModelInterface), "Cover letter generator")
 
         wrap_module_methods_with_context(self.skill_parser)

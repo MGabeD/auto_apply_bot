@@ -27,7 +27,7 @@ def temp_project_dir():
 
 @pytest.fixture
 def rag_indexer(temp_project_dir, mock_embedder):
-    return LocalRagIndexer(project_dir=temp_project_dir)
+    return LocalRagIndexer(vector_store_dir_override=temp_project_dir)
 
 
 @pytest.fixture

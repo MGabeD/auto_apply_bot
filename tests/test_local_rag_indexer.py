@@ -35,8 +35,8 @@ def test_check_index_exists_false(rag_indexer):
 
 def test_check_index_exists_true(rag_indexer):
     # Simulate saved index files
-    (rag_indexer.vector_store / "faiss_index.idx").touch()
-    (rag_indexer.vector_store / "chunk_texts.json").touch()
+    (rag_indexer.vector_store_dir / "faiss_index.idx").touch()
+    (rag_indexer.vector_store_dir / "chunk_texts.json").touch()
     assert rag_indexer._check_index_exists()
 
 ### ----------------------
@@ -78,7 +78,7 @@ def test_embed_chunks(rag_indexer):
 
 def test_add_documents(monkeypatch, rag_indexer):
     monkeypatch.setitem(rag_indexer.loader_map, ".txt", DummyLoader)
-    dummy_file = rag_indexer.project_dir / "dummy.txt"
+    dummy_file = rag_indexer.vector_store_dir / "dummy.txt"
     dummy_file.write_text("dummy")
     rag_indexer.add_documents([dummy_file])
     assert rag_indexer.index is not None
@@ -140,7 +140,7 @@ def test_wipe_rag(rag_indexer):
     rag_indexer.chunk_texts = ["abc"]
     rag_indexer.chunk_hashes = {"hash"}
     rag_indexer.index = mock.Mock()
-    (rag_indexer.vector_store / "faiss_index.idx").touch()
+    (rag_indexer.vector_store_dir / "faiss_index.idx").touch()
     rag_indexer.wipe_rag()
     assert rag_indexer.chunk_texts == []
     assert rag_indexer.index is None
@@ -180,7 +180,7 @@ def test_batch_query_full_rag(rag_indexer, test_data_dir):
     assert rag_indexer.chunk_texts == []
     assert rag_indexer.chunk_hashes == set()
 
-    vector_store = rag_indexer.vector_store
+    vector_store = rag_indexer.vector_store_dir
     assert not (vector_store / "faiss_index.idx").exists()
     assert not (vector_store / "chunk_texts.json").exists()
     assert not (vector_store / "chunk_hashes.json").exists()
