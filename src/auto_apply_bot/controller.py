@@ -6,7 +6,7 @@ from auto_apply_bot.utils.logger import get_logger
 from typing import Optional, Union, List, Callable, Dict
 import torch
 from auto_apply_bot.formatter import summarize_formatter, relevance_formatter
-
+from auto_apply_bot.utils.context_wrapping import wrap_module_methods_with_context
 
 logger = get_logger(__name__)
 
@@ -72,6 +72,10 @@ class Controller:
         self.skill_parser = _safe_default_override(_resolve_component(skill_parser, SkillParser), "Skill parser")
         self.rag_engine = _safe_default_override(_resolve_component(rag_engine, lambda: LocalRagIndexer(project_dir=resolve_project_source())), "RAG engine")
         self.cover_letter_generator = _safe_default_override(_resolve_component(cover_letter_generator, CoverLetterModelInterface), "Cover letter generator")
+
+        wrap_module_methods_with_context(self.skill_parser)
+        wrap_module_methods_with_context(self.cover_letter_generator)
+
         self.relevance_formatter: RelevanceFormatter = relevance_formatter
         self.summarize_formatter: SummarizeFormatter = summarize_formatter
     
@@ -144,7 +148,6 @@ class Controller:
         logger.info(f"Logging last run data into file", extra={"data": self.last_run_data})
         return cover_letter
 
-    @ensure_pipe_loaded("skill_parser")
     def extract_skills(self, job_posting: str, profile_path: str, line_by_line_override: bool = False) -> tuple[list[str], dict]:
         """
         Extracts skills and assesses qualifications from the job posting and profile.
@@ -178,7 +181,6 @@ class Controller:
         logger.info("Querying RAG engine with job-aware prompts...")
         return self.rag_engine.batch_query(query_texts=queries, top_k=top_k, deduplicate=True)
 
-    @ensure_pipe_loaded("skill_parser")
     def filter_relevant_chunks(self, job_posting: str, rag_results: dict[str, list[dict]]) -> dict[str, list[str]]:
         """
         Filters the RAG results by LLM relevance check.
@@ -210,7 +212,6 @@ class Controller:
 
         return relevant_chunks
 
-    @ensure_pipe_loaded("cover_letter_generator")
     def summarize_grouped_chunks(self, grouped_chunks: dict[str, list[str]]) -> list[str]:
         """
         Summarizes the grouped candidate experiences.
@@ -225,7 +226,6 @@ class Controller:
 
         return self.cover_letter_generator.run_prompts(prompts, max_new_tokens=1024)
 
-    @ensure_pipe_loaded("cover_letter_generator")
     def generate_cover_letter(self, job_posting: str, resume_snippets: list[str], **kwargs) -> str:
         """
         Generates a cover letter.
