@@ -1,4 +1,4 @@
-import threading
+import multiprocessing
 import queue
 import uuid
 import traceback
@@ -34,13 +34,32 @@ class JobResult:
         }
 
 
+def process_target(fn_name, args, kwargs, result_pipe):
+    try:
+        controller = get_controller()  
+        target = controller
+        for attr in fn_name.split("."):
+            target = getattr(target, attr)
+        result = target(*args, **kwargs)
+        result_pipe.send(("completed", result, None))
+    except Exception:
+        error_msg = traceback.format_exc()
+        result_pipe.send(("failed", None, error_msg))
+    finally:
+        try:
+            controller.cleanup()
+        except Exception as e:
+            logger.warning(f"Cleanup in subprocess failed: {e}")
+        result_pipe.close()
+
+
 class ControllerQueueManager:
     def __init__(self):
         self.job_queue: queue.Queue = queue.Queue()
         self.results: dict[str, JobResult] = {}
-        self._lock = threading.Lock()
+        self._lock = multiprocessing.Lock()
         logger.info("Starting ControllerQueueManager worker thread")
-        self.thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.thread = multiprocessing.Process(target=self._worker_loop, daemon=True)
         self.thread.start()
 
     def submit_job(
@@ -73,52 +92,41 @@ class ControllerQueueManager:
         while True:
             job_id, fn_name, args, kwargs, timeout_sec = self.job_queue.get()
 
-            def job_wrapper():
-                try:
-                    controller = get_controller()
-                    target = controller
-                    for attr in fn_name.split("."):
-                        target = getattr(target, attr)
-                    result = target(*args, **kwargs)
-                    with self._lock:
-                        if self.results[job_id].status == JobStatus.RUNNING:
-                            self.results[job_id] = JobResult(JobStatus.COMPLETED, result=result)
-                except Exception as e:
-                    error_msg = traceback.format_exc()
-                    logger.error(f"Job {job_id} failed:\n{error_msg}")
-                    with self._lock:
-                        self.results[job_id] = JobResult(JobStatus.FAILED, error=error_msg)
-                finally:
-                    self.job_queue.task_done()
+            parent_conn, child_conn = multiprocessing.Pipe()
+            process = multiprocessing.Process(
+                target=process_target,
+                args=(fn_name, args, kwargs, child_conn),
+                daemon=True
+            )
 
             with self._lock:
                 self.results[job_id].status = JobStatus.RUNNING
 
-            thread = threading.Thread(target=job_wrapper, daemon=True)
-            thread.start()
+            process.start()
+            process.join(timeout=timeout_sec)
 
-            if timeout_sec:
-                timer = threading.Timer(timeout_sec, self._handle_timeout, args=[job_id])
-                timer.start()
-                thread.join(timeout_sec)
-                timer.cancel()
+            if process.is_alive():
+                process.terminate()
+                process.join()
+                with self._lock:
+                    self.results[job_id] = JobResult(
+                        status=JobStatus.TIMEOUT,
+                        error="Job timed out and was terminated."
+                    )
+                logger.warning(f"Job {job_id} timed out.")
             else:
-                thread.join()
+                try:
+                    status_str, result, error = parent_conn.recv()
+                    status = JobStatus.COMPLETED if status_str == "completed" else JobStatus.FAILED
+                    with self._lock:
+                        self.results[job_id] = JobResult(status=status, result=result, error=error)
+                except EOFError:
+                    with self._lock:
+                        self.results[job_id] = JobResult(status=JobStatus.FAILED, error="No result returned.")
+                    logger.error(f"Job {job_id} process ended without sending a result.")
 
-    def _handle_timeout(self, job_id: str):
-        with self._lock:
-            if self.results.get(job_id) and self.results[job_id].status == JobStatus.RUNNING:
-                self.results[job_id] = JobResult(
-                    status=JobStatus.TIMEOUT,
-                    error="Job timed out."
-                )
-                logger.warning(f"Job {job_id} timed out and was marked as TIMEOUT.")
-        try:
-            controller = get_controller()
-            controller.cleanup()
-            logger.info(f"Controller cleanup called after timeout on job {job_id}")
-        except Exception as e:
-            logger.error(f"Failed to cleanup controller after timeout for job {job_id}: {e}")
+            parent_conn.close()
+            self.job_queue.task_done()
 
 
 # Singleton instance
