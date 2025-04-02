@@ -26,10 +26,12 @@ def wrap_module_methods_with_context(module, context_attr: str = "pipe", include
         original = getattr(module, name)
 
         @functools.wraps(original)
-        def wrapper(*args, _original=original, _module=module, **kwargs):
+        def wrapper(*args, _original=original, _module=module, _name=name, **kwargs):
             context_ready = getattr(_module, context_attr, None) is not None
             if context_ready:
+                logger.info(f"Calling {_module.__class__.__name__}.{_name} with pipe already initialized.")
                 return _original(*args, **kwargs)
+            logger.info(f"Calling {_module.__class__.__name__}.{_name} with pipe not initialized, entering context.")
             with _module:
                 return _original(*args, **kwargs)
 

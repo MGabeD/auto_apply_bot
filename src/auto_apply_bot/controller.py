@@ -29,22 +29,6 @@ def _safe_default_override(component: Union[dict, object], name: str) -> Union[d
     return component
 
 
-def ensure_pipe_loaded(module_attr: str):
-    """
-    Decorator to auto-enter and exit the context manager of a model interface
-    if its `.pipe` is not initialized.
-    """
-    def decorator(fn):
-        def wrapper(self, *args, **kwargs):
-            module = getattr(self, module_attr)
-            if getattr(module, "pipe", None) is not None:
-                return fn(self, *args, **kwargs)
-            with module:
-                return fn(self, *args, **kwargs)
-        return wrapper
-    return decorator
-
-
 class Controller:
     def __init__(
         self,
