@@ -44,7 +44,6 @@ def upload_files_view(request):
             "files": []
         }, status=400)
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     file_results = []
 
     for file in files:
@@ -62,7 +61,7 @@ def upload_files_view(request):
         else:
             try:
                 unique_name = f"{uuid.uuid4().hex}{Path(file.name).suffix.lower()}"
-                save_path = UPLOAD_DIR / unique_name
+                save_path = get_upload_dir() / unique_name
 
                 with open(save_path, "wb+") as dest:
                     for chunk in file.chunks():
