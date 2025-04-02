@@ -3,8 +3,8 @@ import queue
 import uuid
 import traceback
 from enum import Enum
-from dataclasses import dataclass, asdict
-from typing import Any, Optional, Callable
+from dataclasses import dataclass
+from typing import Any, Optional
 from auto_apply_bot.service.controller_service.controller_service import get_controller
 from auto_apply_bot.logger import get_logger
 
@@ -43,7 +43,13 @@ class ControllerQueueManager:
         self.thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.thread.start()
 
-    def submit_job(self, fn_name: str, args: list = None, kwargs: dict = None, timeout_sec: Optional[int] = 120) -> str:
+    def submit_job(
+        self,
+        fn_name: str,
+        args: list = None,
+        kwargs: dict = None,
+        timeout_sec: Optional[int] = 120,
+    ) -> str:
         job_id = str(uuid.uuid4())
         with self._lock:
             self.results[job_id] = JobResult(status=JobStatus.PENDING)
@@ -66,23 +72,7 @@ class ControllerQueueManager:
     def _worker_loop(self):
         while True:
             job_id, fn_name, args, kwargs, timeout_sec = self.job_queue.get()
-            # with self._lock:
-            #     self.results[job_id].status = JobStatus.RUNNING
-            # try:
-            #     controller = get_controller()
-            #     target = controller
-            #     for attr in fn_name.split("."):
-            #         target = getattr(target, attr)
-            #     result = target(*args, **kwargs)
-            #     with self._lock:
-            #         self.results[job_id] = JobResult(status=JobStatus.COMPLETED, result=result)
-            # except Exception:
-            #     error_msg = traceback.format_exc()
-            #     logger.error(f"Job {job_id} failed:\n{error_msg}")
-            #     with self._lock:
-            #         self.results[job_id] = JobResult(status=JobStatus.FAILED, error=error_msg)
-            # finally:
-            #     self.job_queue.task_done()
+
             def job_wrapper():
                 try:
                     controller = get_controller()
@@ -91,10 +81,9 @@ class ControllerQueueManager:
                         target = getattr(target, attr)
                     result = target(*args, **kwargs)
                     with self._lock:
-                        # Don’t override if already timed out
                         if self.results[job_id].status == JobStatus.RUNNING:
                             self.results[job_id] = JobResult(JobStatus.COMPLETED, result=result)
-                except Exception:
+                except Exception as e:
                     error_msg = traceback.format_exc()
                     logger.error(f"Job {job_id} failed:\n{error_msg}")
                     with self._lock:
@@ -109,11 +98,7 @@ class ControllerQueueManager:
             thread.start()
 
             if timeout_sec:
-                timer = threading.Timer(
-                    timeout_sec,
-                    self._handle_timeout,
-                    args=[job_id],
-                )
+                timer = threading.Timer(timeout_sec, self._handle_timeout, args=[job_id])
                 timer.start()
                 thread.join(timeout_sec)
                 timer.cancel()
@@ -128,6 +113,12 @@ class ControllerQueueManager:
                     error="Job timed out."
                 )
                 logger.warning(f"Job {job_id} timed out and was marked as TIMEOUT.")
+        try:
+            controller = get_controller()
+            controller.cleanup()
+            logger.info(f"Controller cleanup called after timeout on job {job_id}")
+        except Exception as e:
+            logger.error(f"Failed to cleanup controller after timeout for job {job_id}: {e}")
 
 
 # Singleton instance

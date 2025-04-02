@@ -68,6 +68,17 @@ class BaseModelInterface:
             torch.cuda.empty_cache()
         logger.info("Pipeline cleaned up and CUDA memory released.")
 
+    def cleanup(self):
+        """
+        Cleans up the base model interface.
+        """
+        self.pipe = None
+        self.tokenizer = None
+        self.model = None
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        logger.info("Pipeline cleaned up and CUDA memory released.")
+
     def _load_gpu_only(self) -> AutoModelForCausalLM:
         logger.info("Attempting full GPU load...")
         model = AutoModelForCausalLM.from_pretrained(

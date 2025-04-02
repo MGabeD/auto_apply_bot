@@ -83,6 +83,16 @@ class LoraModelInterface(BaseModelInterface):
         self.last_loaded_adapter_path = None
         self.last_trained_adapter_path = None
 
+    def cleanup(self):
+        """
+        Cleans up the LoRA model interface.
+        """
+        logger.warning("Cleaning up LoraModelInterface's local elements before delegating to BaseModelInterface cleanup")
+        self.base_model = None
+        self.last_loaded_adapter_path = None
+        self.last_trained_adapter_path = None
+        super().cleanup()
+
     def _safely_attach_lora_adapter(self, adapter_path: Path) -> PeftModel:
         """
         Attempts to attach a LoRA adapter to the base model, ensuring that the adapter is properly loaded and applied.

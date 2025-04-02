@@ -32,6 +32,12 @@ class CoverLetterModelInterface(LoraModelInterface):
         self._feedback_examples: List[tuple[str, str]] = []
         self.formatter = formatter
 
+    def cleanup(self):
+        """
+        Cleans up the cover letter generator.
+        """
+        super().cleanup()
+
     # MARK: This section is for handling LoRA training for the cover letter generator
 
     # MARK: This sub-section is for handling feedback examples for the cover letter generator

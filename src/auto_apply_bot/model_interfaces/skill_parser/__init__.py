@@ -82,6 +82,13 @@ class SkillParser(BaseModelInterface):
         """
         super().__init__(model_name, device, bnb_config)
 
+    def cleanup(self):
+        """
+        Cleans up the SkillParser.
+        """
+        logger.warning("Cleaning up SkillParser - identical to BaseModelInterface cleanup")
+        super().cleanup()
+
     def _split_text(self, text: str, chunk_size: int = 400) -> List[str]:
         """
         Splits a long string into smaller chunks.

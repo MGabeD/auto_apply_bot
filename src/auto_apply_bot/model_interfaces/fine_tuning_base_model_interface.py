@@ -131,3 +131,11 @@ class FineTunableModelInterface(BaseModelInterface):
         tokenizer = AutoTokenizer.from_pretrained(latest_model_path, use_fast=True)
         model = AutoModelForCausalLM.from_pretrained(latest_model_path, trust_remote_code=True)
         self.pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, device=0 if self.device == "cuda" else -1)
+
+    def cleanup(self):
+        """
+        Cleans up the fine-tuning base model interface.
+        """
+        logger.warning("Cleaning up FineTunableModelInterface - identical to BaseModelInterface cleanup")
+        super().cleanup()
+

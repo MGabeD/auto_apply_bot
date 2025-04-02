@@ -80,6 +80,13 @@ class LocalRagIndexer:
                 self._embedder = SentenceTransformer(self.embedder_model_name)
             yield self._embedder
 
+    def cleanup(self):
+        """
+        Cleans up the RAG indexer.
+        Currently does nothing.
+        """
+        return
+
     def clear_embedder(self):
         """
         Clears the persistent embedder.

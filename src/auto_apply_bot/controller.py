@@ -84,6 +84,15 @@ class Controller:
         logger.info(f" - RelevanceFormatter: {type(self.relevance_formatter).__name__}")
         logger.info(f" - SummarizeFormatter: {type(self.summarize_formatter).__name__}")
 
+    def cleanup(self):
+        """
+        Cleans up the Controller.
+        """
+        logger.warning("Cleaning up Controller's via delegating to sub-elements' cleanup")
+        self.skill_parser.cleanup()
+        self.rag_engine.cleanup()
+        self.cover_letter_generator.cleanup()
+
     def run_full_pipeline(
             self, 
             job_posting: str, 
