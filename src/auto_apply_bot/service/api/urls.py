@@ -2,10 +2,8 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # TODO these will likely be removed in future commits
-    path('hello/', views.hello_world, name='hello_world'),
-    path('query-rag/', views.query_rag, name='query_rag'),
-    path('rag-up-docs/', views.upload_documents_rag, name="upload_documents_rag"),
+    # MARK: Non-controller logic endpoints
+    path('upload-rag-docs/', views.upload_rag_docs, name='upload_rag_docs'),
 
     # MARK: direct job submission through the controller queue manager
     #  post and poll style endpoints

@@ -11,3 +11,4 @@ scripts/misc_python/*
 demo_RAG_files/*
 vector_store/*
 lora_weights/*
+service/uploads/*

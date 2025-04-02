@@ -11,9 +11,11 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+from auto_apply_bot import resolve_component_dirs_path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+SERVICE_NAME = "service"
+SERVICE_DIR = resolve_component_dirs_path(SERVICE_NAME)
 
 
 # Quick-start development settings - unsuitable for production
@@ -122,3 +124,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+if __name__ == "__main__":
+    print(BASE_DIR)
