@@ -1,8 +1,8 @@
-from auto_apply_bot.model_interfaces.skill_parser import SkillParser, extract_sections
+from auto_apply_bot.model_interfaces.skill_parser import SkillParser
 from auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generator import CoverLetterModelInterface
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
 from auto_apply_bot import resolve_project_source
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 from typing import Optional, Union, List, Callable, Dict
 import torch
 from auto_apply_bot.formatter import summarize_formatter, relevance_formatter

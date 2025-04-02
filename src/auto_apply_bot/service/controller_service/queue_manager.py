@@ -6,7 +6,7 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Any, Optional
 from auto_apply_bot.service.controller_service.controller_service import get_controller
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 
 
 logger = get_logger(__name__)

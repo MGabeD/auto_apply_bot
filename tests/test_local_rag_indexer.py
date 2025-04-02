@@ -1,12 +1,9 @@
-import os
-import json
 import pytest
 import numpy as np
-from pathlib import Path
 from unittest import mock
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
 from tests.mocks.mock_loader import DummyLoader
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 
 
 logger = get_logger(__name__)

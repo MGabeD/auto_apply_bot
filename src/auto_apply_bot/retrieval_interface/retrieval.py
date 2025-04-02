@@ -8,10 +8,9 @@ import numpy as np
 import faiss
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredWordDocumentLoader
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 from auto_apply_bot import resolve_project_source
-from auto_apply_bot.loader import load_documents, LOADER_MAP
+from auto_apply_bot.utils.loader import load_documents, LOADER_MAP
 from contextlib import contextmanager
 import torch
 

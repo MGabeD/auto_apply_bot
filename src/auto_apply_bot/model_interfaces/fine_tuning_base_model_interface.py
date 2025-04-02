@@ -1,5 +1,5 @@
 from auto_apply_bot.model_interfaces.base_model_interface import BaseModelInterface
-from auto_apply_bot.logger import get_logger
+from auto_apply_bot.utils.logger import get_logger
 from auto_apply_bot import resolve_project_source
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Trainer, TrainingArguments, pipeline
 import torch
