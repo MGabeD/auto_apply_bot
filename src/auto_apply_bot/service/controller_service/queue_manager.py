@@ -34,6 +34,22 @@ class JobResult:
         }
 
 
+def resolve_controller_callable(fn_path: str):
+    """
+    Resolves a dot-delimited path to a callable from the Controller instance.
+    Raises ValueError if path is invalid or not callable.
+    """
+    controller = get_controller()
+    target = controller
+    for attr in fn_path.split("."):
+        if not hasattr(target, attr):
+            raise ValueError(f"Attribute '{attr}' not found in path '{fn_path}'")
+        target = getattr(target, attr)
+    if not callable(target):
+        raise ValueError(f"Resolved path '{fn_path}' is not callable.")
+    return target
+
+
 def process_target(fn_name, args, kwargs, result_pipe):
     try:
         controller = get_controller()  
@@ -70,6 +86,11 @@ class ControllerQueueManager:
         timeout_sec: Optional[int] = 120,
     ) -> str:
         job_id = str(uuid.uuid4())
+        try:
+            resolve_controller_callable(fn_name)
+        except ValueError as e:
+            logger.error(f"Job {job_id} submission failed: Invalid function path: {fn_name}")
+            raise
         with self._lock:
             self.results[job_id] = JobResult(status=JobStatus.PENDING)
         self.job_queue.put((job_id, fn_name, args or [], kwargs or {}, timeout_sec))
