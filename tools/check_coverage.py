@@ -33,7 +33,7 @@ def colorize_coverage_report(threshold: Optional[int] = None, color_total_line: 
         print(f"{MAGENTA_BRIGHT}No .coverage file found. Please run `coverage run` before this script.{RESET}")
         return False
 
-    print(f"\n{CYAN_BRIGHT}Coverage Report:{' [TRUNCATED at: {threshold}%]' if threshold is not None else ''}{RESET}\n")
+    print(f"\n{CYAN_BRIGHT}Coverage Report:{f' [TRUNCATED at: {threshold}%]' if threshold is not None else ''}{RESET}\n")
     
     result = subprocess.run(["coverage", "report", "--show-missing"], capture_output=True, text=True)
     lines = result.stdout.splitlines()
