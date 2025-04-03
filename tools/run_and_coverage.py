@@ -2,8 +2,11 @@ import subprocess
 import re
 import sys
 import argparse
-from typing import Optional
 import os
+
+from typing import Optional
+
+from auto_apply_bot import resolve_component_dirs_path
 
 
 GRADIENT = [
@@ -22,7 +25,20 @@ GRADIENT = [
 
 CYAN_BRIGHT = "\033[38;5;45m"
 MAGENTA_BRIGHT = "\033[38;5;201m"
+RED_BRIGHT = GRADIENT[0]
+YELLOW_BRIGHT = GRADIENT[5]
 RESET = "\033[0m"
+
+
+def generate_lcov_report() -> bool:
+    try:
+        lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
+        print(f"{CYAN_BRIGHT}Generating LCOV report to {lcov_path}{RESET}")
+        subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True, stdout=subprocess.DEVNULL)
+        return True
+    except Exception as e:
+        print(f"{RED_BRIGHT}Failed to write LCOV report: {e}{RESET}")
+        return False
 
 
 def coverage_color(percentage):
@@ -41,37 +57,40 @@ def has_staged_py_files() -> bool:
         return any(fname.endswith(".py") for fname in result.stdout.splitlines())
     except subprocess.CalledProcessError:
         return False
+    
+
+def coverage_file_available() -> bool:
+    return os.path.exists(".coverage")
 
 
-def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool = False, extra_pytest_args=None) -> bool:
-    should_run_tests = has_staged_py_files()
+def should_run_coverage_report() -> bool:
+    if not coverage_file_available():
+        return True
+    return subprocess.run(["coverage", "report", "--show-missing"], capture_output=True, text=True)
 
-    if should_run_tests:
-        pytest_cmd = [
-            sys.executable,
-            "-m",
-            "coverage",
-            "run",
-            "--source=src/auto_apply_bot",
-            "-m",
-            "pytest",
-            "tests",
-        ]
-        if extra_pytest_args:
-            pytest_cmd.extend(extra_pytest_args)
-        try:
-            subprocess.run(pytest_cmd, check=True)
-            test_failed = False
-        except subprocess.CalledProcessError:
-            print("\033[33mTests failed. Coverage will still be shown.\033[0m\n")
-            test_failed = True
-    else:
-        if not os.path.exists(".coverage"):
-            print("\033[31mNo staged Python files and no .coverage file found. Exiting.\033[0m")
-            return False
-        test_failed = False
-        print("\033[33mNo staged Python files. Skipping tests and showing existing coverage.\033[0m")
 
+def run_pytests_hard_coded_for_tooling(extra_pytest_args: Optional[list[str]] = None) -> bool:
+    pytest_cmd = [
+        sys.executable,
+        "-m",
+        "coverage",
+        "run",
+        "--source=src/auto_apply_bot",
+        "-m",
+        "pytest",
+        "tests",
+    ]
+    if extra_pytest_args:
+        pytest_cmd.extend(extra_pytest_args)
+    try:
+        subprocess.run(pytest_cmd, check=True)
+        return False
+    except subprocess.CalledProcessError:
+        print(f"{RED_BRIGHT}Tests failed. Coverage will still be shown.{RESET}")
+        return True
+
+
+def generate_coverage_report(threshold: Optional[int] = None, color_total_line: bool = False) -> None:
     if threshold is not None:
         print(f"\n{CYAN_BRIGHT}Coverage Report:{f' [TRUNCATED AT < {threshold}%]' if threshold is not None else ''}{RESET}\n")
     else:
@@ -124,6 +143,24 @@ def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool =
         else:
             color = coverage_color(percent)
             print(f"{color}{line}{RESET}")
+
+
+def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool = False, extra_pytest_args: Optional[list[str]] = None) -> bool:
+    should_run_tests = should_run_coverage_report()
+
+    if should_run_tests:
+        test_failed = run_pytests_hard_coded_for_tooling(extra_pytest_args=extra_pytest_args)
+    else:
+        if not coverage_file_available():
+            print(f"{RED_BRIGHT}No staged Python files and no .coverage file found. Exiting.{RESET}")
+            return False
+        test_failed = False
+        print(f"{YELLOW_BRIGHT}No staged Python files. Skipping tests and showing existing coverage.{RESET}")
+
+    if should_run_tests:
+        generate_lcov_report()
+
+    generate_coverage_report(threshold=threshold, color_total_line=color_total_line)
 
     return not test_failed
 

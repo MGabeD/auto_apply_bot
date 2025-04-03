@@ -5,6 +5,7 @@ from pathlib import Path
 from auto_apply_bot import resolve_project_source
 import os
 
+
 _run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 RESET = "\033[0m"
 COLORS = {
@@ -66,6 +67,15 @@ def get_logger(name: str, quiet_mode: bool = os.environ.get("QUIET_MODE", "false
         file_handler.setFormatter(file_formatter)
         if not disable_file_logging:
             logger.addHandler(file_handler)
-        logger.info(f"Logger initialized, writing to: {log_file_path}")
+        txt = ""
+        if quiet_mode:
+            txt += "Logger initialized with quiet mode enabled, no logging to console. "
+        else:
+            txt += "Logger initialized, logging to console. "
+        if disable_file_logging:
+            txt += "File logging disabled. "
+        else:
+            txt += f"File logging enabled, writing to: {log_file_path} "
+        logger.info(txt)
 
     return logger

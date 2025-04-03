@@ -11,9 +11,9 @@ Whether you're experimenting with personalized AI writing or building tools to s
 Instructions for usage
 
 1) pip install torch==2.1.2+cu121 --index-url https://download.pytorch.org/whl/cu121
-2) Choose Between the following depending on your operating system
+2) Choose Between the following depending on your operating system, dev is optional, but you cannot change the codebase if you don't install it 
 
-    A) python -m pip install -e .[test,unix]
+    A) python -m pip install -e .[dev,unix]
 
-    B) python -m pip install -e .[test,windows]
+    B) python -m pip install -e .[dev,windows]
  

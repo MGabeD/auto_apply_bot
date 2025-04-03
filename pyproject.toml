@@ -50,12 +50,13 @@ windows = [
     "python-magic-bin > 0.3, < 1",
 ]
 
-test = [
+dev = [
     "pytest >= 8, < 9",
     "pytest-cov",
     "pytest-randomly",
     "requests_mock",
     "coverage",
+    "coverage-lcov",
     "webdriver-manager",
     "pre-commit",
 ]
