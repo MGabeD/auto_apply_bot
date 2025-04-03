@@ -34,7 +34,7 @@ def generate_lcov_report() -> bool:
     try:
         lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
         print(f"{CYAN_BRIGHT}Generating LCOV report to {lcov_path}{RESET}")
-        subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True)
+        subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True, stdout=subprocess.DEVNULL)
         return True
     except Exception as e:
         print(f"{RED_BRIGHT}Failed to write LCOV report: {e}{RESET}")
@@ -157,10 +157,10 @@ def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool =
         test_failed = False
         print(f"{YELLOW_BRIGHT}No staged Python files. Skipping tests and showing existing coverage.{RESET}")
 
-    generate_coverage_report(threshold=threshold, color_total_line=color_total_line)
-
     if should_run_tests:
         generate_lcov_report()
+
+    generate_coverage_report(threshold=threshold, color_total_line=color_total_line)
 
     return not test_failed
 
