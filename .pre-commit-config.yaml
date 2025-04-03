@@ -8,5 +8,6 @@ repos:
         pass_filenames: false
         args: ["--threshold", "100", "--color-total-line", "--quiet-logs"]
         verbose: true
+        always_run: true
 
     

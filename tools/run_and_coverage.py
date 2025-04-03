@@ -24,6 +24,7 @@ CYAN_BRIGHT = "\033[38;5;45m"
 MAGENTA_BRIGHT = "\033[38;5;201m"
 RESET = "\033[0m"
 
+
 def coverage_color(percentage):
     index = min(int(percentage // 10), 10)
     return GRADIENT[index]
