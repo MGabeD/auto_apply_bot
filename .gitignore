@@ -14,3 +14,4 @@ lora_weights/*
 service/uploads/*
 .vscode/*
 .coverage
+coverage/*

@@ -2,8 +2,11 @@ import subprocess
 import re
 import sys
 import argparse
-from typing import Optional
 import os
+
+from typing import Optional
+
+from auto_apply_bot import resolve_component_dirs_path
 
 
 GRADIENT = [
@@ -137,8 +140,7 @@ def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool =
 
     if should_run_tests:
         try:
-            lcov_path = os.path.join("coverage", "lcov.info")
-            os.makedirs("coverage", exist_ok=True)
+            lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
             subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True)
             print(f"\033[32mLCOV report written to {lcov_path}\033[0m")
         except Exception as e:
