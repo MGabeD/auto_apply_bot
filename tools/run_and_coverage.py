@@ -47,14 +47,14 @@ def coverage_file_available() -> bool:
     return os.path.exists(".coverage")
 
 
-def run_coverage_report():
+def should_run_coverage_report() -> bool:
     if not coverage_file_available():
-        return False
+        return True
     return subprocess.run(["coverage", "report", "--show-missing"], capture_output=True, text=True)
 
 
 def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool = False, extra_pytest_args=None) -> bool:
-    should_run_tests = has_staged_py_files()
+    should_run_tests = should_run_coverage_report()
 
     if should_run_tests:
         pytest_cmd = [
