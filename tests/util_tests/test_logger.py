@@ -1,5 +1,6 @@
 from auto_apply_bot.utils.logger import get_logger
 
+
 def test_logger_creates_log_file_and_writes(tmp_path, monkeypatch):
     """
     Test that the logger creates a log file and writes to it. Seems unneccesary to test this. But since it is kinda core to everything being debuggable,

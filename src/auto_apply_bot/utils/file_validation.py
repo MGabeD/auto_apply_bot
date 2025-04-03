@@ -9,10 +9,10 @@ mime_detector = magic.Magic(mime=True)
 
 
 def get_mime_type(file) -> str:
+    if not hasattr(file, 'read') or not hasattr(file, 'seek') or not hasattr(file, 'tell'):
+        raise ValueError("Invalid file object")
     pos = file.tell()
     sample = file.read(2048)
-    if not hasattr(file, 'read') or not hasattr(file, 'seek'):
-        raise ValueError("Invalid file object")
     file.seek(pos)
     return mime_detector.from_buffer(sample)
 
@@ -35,8 +35,11 @@ def validate_file(file, allowed_extensions: Dict[str, List[str]], max_size: Opti
             return False, f"Expected MIME type: {expected_mime_type}, got: {mime_type}"
         else:
             logger.info(f"FUZZY MATCH: Mime type {mime_type} is not an exact match for expected mime types: {expected_mime_type}")
-    file_size = getattr(file, 'size', 0)
-    if max_size and file_size > max_size:
+    file_size = getattr(file, 'size', None)
+    if file_size is None:
+        logger.warning(f"File {file.name} missing size attribute, cannot validate size. Rejecting file.")
+        return False, "File size validation failed: missing size attribute"
+    elif max_size and file_size > max_size:
         logger.warning(f"File size exceeds maximum allowed size: {max_size} bytes")
         return False, f"File size exceeds maximum allowed size: {max_size} bytes"
 
