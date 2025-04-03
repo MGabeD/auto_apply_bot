@@ -1,6 +1,14 @@
 repos:
   - repo: local
     hooks:
+      - id: block-commit-to-main
+        name: Prevent Commits Directly to Main
+        entry: python tools/prevent_commit_to_main.py
+        language: system
+        pass_filenames: false
+        verbose: true
+        always_run: true
+        
       - id: check-coverage
         name: Run Tests and Colorize Coverage
         entry: python tools/run_and_coverage.py
