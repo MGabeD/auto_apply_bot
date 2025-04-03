@@ -28,6 +28,17 @@ MAGENTA_BRIGHT = "\033[38;5;201m"
 RESET = "\033[0m"
 
 
+def generate_lcov_report() -> bool:
+    try:
+        lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
+        subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True)
+        print(f"\033[32mLCOV report written to {lcov_path}\033[0m")
+        return True
+    except Exception as e:
+        print(f"\033[31mFailed to write LCOV report: {e}\033[0m")
+        return False
+
+
 def coverage_color(percentage):
     index = min(int(percentage // 10), 10)
     return GRADIENT[index]
@@ -139,12 +150,7 @@ def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool =
             print(f"{color}{line}{RESET}")
 
     if should_run_tests:
-        try:
-            lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
-            subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True)
-            print(f"\033[32mLCOV report written to {lcov_path}\033[0m")
-        except Exception as e:
-            print(f"\033[31mFailed to write LCOV report: {e}\033[0m")
+        generate_lcov_report()
 
     return not test_failed
 
