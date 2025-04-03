@@ -6,4 +6,5 @@ repos:
         entry: pytest
         language: system
         pass_filenames: false
-          
+        args: ["--quiet-logs"]
+

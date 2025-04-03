@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from auto_apply_bot import resolve_project_source
+import os
 
 _run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 RESET = "\033[0m"
@@ -35,7 +36,7 @@ class DataInjectingFormatter(logging.Formatter):
         return base
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str, quiet_mode: bool = os.environ.get("QUIET_MODE", "false").lower() == "true", disable_file_logging: bool = os.environ.get("DISABLE_FILE_LOGGING", "false").lower() == "true") -> logging.Logger:
     project_root: Path = resolve_project_source()
     logs_dir: Path = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
@@ -44,6 +45,7 @@ def get_logger(name: str) -> logging.Logger:
 
     logger = logging.getLogger(name)
     if not logger.handlers:
+        
         logger.setLevel(logging.INFO)
 
         stream_handler = logging.StreamHandler()
@@ -52,7 +54,9 @@ def get_logger(name: str) -> logging.Logger:
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         stream_handler.setFormatter(stream_formatter)
-        logger.addHandler(stream_handler)
+
+        if not quiet_mode:
+            logger.addHandler(stream_handler)
 
         file_handler = logging.FileHandler(log_file_path, mode="a")
         file_formatter = DataInjectingFormatter(
@@ -60,8 +64,8 @@ def get_logger(name: str) -> logging.Logger:
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
+        if not disable_file_logging:
+            logger.addHandler(file_handler)
         logger.info(f"Logger initialized, writing to: {log_file_path}")
 
     return logger

@@ -3,6 +3,16 @@ import tempfile
 import shutil
 from pathlib import Path
 from tests.mocks import mock_loader
+import os
+
+
+def pytest_addoption(parser):
+    parser.addoption("--quiet-logs", action="store_true", default=False, help="Disable logging output from the application during test")
+
+
+def pytest_configure(config):
+    if config.getoption("--quiet-logs"):
+        os.environ["QUIET_MODE"] = "true"
 
 
 @pytest.fixture
