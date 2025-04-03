@@ -5,15 +5,13 @@ from auto_apply_bot.utils.logger import get_logger
 from auto_apply_bot import resolve_component_dirs_path
 from typing import Optional, Union, List, Callable, Dict
 import torch
-from auto_apply_bot.formatter import summarize_formatter, relevance_formatter
 from auto_apply_bot.utils.context_wrapping import wrap_module_methods_with_context
+from auto_apply_bot.formatters import RelevanceFormatter, SummarizeFormatter
+from auto_apply_bot.formatters.relevance_formatters import check_relevant_skills_as_hiring_manager as relevance_formatter
+from auto_apply_bot.formatters.summarize_formatters import summarize_snippets_relevant_to_skill as summarize_formatter
 
 
 logger = get_logger(__name__)
-
-
-RelevanceFormatter = Callable[[str, str, Union[str, List[str]]], str]
-SummarizeFormatter = Callable[[str, Union[str, List[str]]], str]
 
 
 def _safe_default_override(component: Union[dict, object], name: str) -> Union[dict, object]:
