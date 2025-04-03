@@ -1,34 +1,12 @@
 repos:
   - repo: local
     hooks:
-      # - id: run-tests-and-generate-coverage
-      #   name: Run Tests and Save Coverage if Python Files Are Staged
-      #   entry: python tools/run_tests_if_needed.py
-      #   language: system
-      #   pass_filenames: true
-      #   verbose: true
       - id: check-coverage
         name: Run Tests and Colorize Coverage
         entry: python tools/run_and_coverage.py
         language: system
         pass_filenames: false
-        args: ["--threshold", "100", "--color-total-line"]
+        args: ["--threshold", "100", "--color-total-line", "--quiet-logs"]
         verbose: true
 
-      # - id: show-colorized-coverage
-      #   name: Show Colorized Coverage Report
-      #   entry: python tools/check_coverage.py
-      #   language: system
-      #   pass_filenames: false
-      #   args: ["--threshold", "100", "--color-total-line"]
-      #   verbose: true
-
-# repos:
-#   - repo: local
-#     hooks:
-#       - id: check-coverage
-#         name: Run Tests + Colorize Coverage
-#         entry: python tools/run_and_coverage.py
-#         language: system
-#         args: ["--threshold", "100", "--color-total-line"]
-#         verbose: true
+    

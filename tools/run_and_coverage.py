@@ -27,6 +27,8 @@ RESET = "\033[0m"
 def coverage_color(percentage):
     index = min(int(percentage // 10), 10)
     return GRADIENT[index]
+
+
 def has_staged_py_files() -> bool:
     try:
         result = subprocess.run(
@@ -38,6 +40,7 @@ def has_staged_py_files() -> bool:
         return any(fname.endswith(".py") for fname in result.stdout.splitlines())
     except subprocess.CalledProcessError:
         return False
+
 
 def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool = False, extra_pytest_args=None) -> bool:
     should_run_tests = has_staged_py_files()
@@ -69,7 +72,7 @@ def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool =
         print("\033[33mNo staged Python files. Skipping tests and showing existing coverage.\033[0m")
 
     if threshold is not None:
-        print(f"\n{CYAN_BRIGHT}Coverage Report: [TRUNCATED AT < {threshold}%]{RESET}\n")
+        print(f"\n{CYAN_BRIGHT}Coverage Report:{f' [TRUNCATED AT < {threshold}%]' if threshold is not None else ''}{RESET}\n")
     else:
         print(f"\n{CYAN_BRIGHT}Coverage Report: {RESET}\n")
     result = subprocess.run(["coverage", "report", "--show-missing"], capture_output=True, text=True)
@@ -127,6 +130,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run pytest with coverage and colorize results.")
     parser.add_argument("--threshold", type=int, default=None, help="Only show files below this coverage %")
     parser.add_argument("--color-total-line", action="store_true", help="Color the TOTAL row based on its percentage")
+    
     args, extra = parser.parse_known_args()
 
     success = colorize_full_rows(
