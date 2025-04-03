@@ -41,6 +41,16 @@ def has_staged_py_files() -> bool:
         return any(fname.endswith(".py") for fname in result.stdout.splitlines())
     except subprocess.CalledProcessError:
         return False
+    
+
+def coverage_file_available() -> bool:
+    return os.path.exists(".coverage")
+
+
+def run_coverage_report():
+    if not coverage_file_available():
+        return False
+    return subprocess.run(["coverage", "report", "--show-missing"], capture_output=True, text=True)
 
 
 def colorize_full_rows(threshold: Optional[int] = None, color_total_line: bool = False, extra_pytest_args=None) -> bool:
