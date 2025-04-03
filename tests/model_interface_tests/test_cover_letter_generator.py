@@ -91,3 +91,50 @@ def test_dialogue_pair_dataset_len_and_getitem(dummy_tokenizer):
     assert "input_ids" in item
     assert "attention_mask" in item
     assert "labels" in item
+
+
+def test_train_on_dialogue_pairs_raises_value_error(dummy_tokenizer):
+    model = CoverLetterModelInterface()
+    model.tokenizer = dummy_tokenizer
+    with pytest.raises(ValueError):
+        model.train_on_dialogue_pairs(dialogue_pairs=None)
+
+
+def test_train_on_dialogue_pairs_with_empty_buffer_returns_none(dummy_tokenizer):
+    model = CoverLetterModelInterface()
+    model.tokenizer = dummy_tokenizer
+    model.ensure_lora_adapter_loaded = lambda error_message="": None
+    result = model.train_on_dialogue_pairs(dialogue_pairs=[], load_from_buffer=True)
+    assert result is None
+
+
+def test_train_on_dialogue_pairs_raises_if_no_tokenizer():
+    model = CoverLetterModelInterface()
+    model.ensure_lora_adapter_loaded = lambda error_message="": None
+    model.add_feedback_example("Prompt", "Response")
+    with pytest.raises(RuntimeError):
+        model.train_on_dialogue_pairs(load_from_buffer=True)
+
+
+def test_train_on_existing_cover_letters_skips_if_empty(dummy_tokenizer, monkeypatch):
+    monkeypatch.setattr(
+        "auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generator.load_texts_from_files",
+        lambda paths: ["", "   "]
+    )
+    model = CoverLetterModelInterface()
+    model.tokenizer = dummy_tokenizer
+    result = model.train_on_existing_letters(["path"])
+    assert result is None
+
+
+def test_dialogue_dataset_custom_formatter(dummy_tokenizer):
+    called = {}
+
+    def custom_formatter(prompt, response):
+        called["used"] = True
+        return f"{prompt} -- {response}"
+
+    data = [("Hi", "Hello")]
+    dataset = DialoguePairDataset(data, dummy_tokenizer, formatter=custom_formatter)
+    _ = dataset[0]
+    assert called.get("used", False)
