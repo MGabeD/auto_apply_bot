@@ -21,6 +21,7 @@ ALLOWED_FILE_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt', '.json']
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
+
 @ensure_path_is_dir_or_create
 def get_upload_dir() -> Path:
     return Path(settings.SERVICE_DIR) / 'uploads'
