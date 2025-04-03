@@ -8,6 +8,7 @@ import torch
 from auto_apply_bot.formatter import summarize_formatter, relevance_formatter
 from auto_apply_bot.utils.context_wrapping import wrap_module_methods_with_context
 
+
 logger = get_logger(__name__)
 
 
