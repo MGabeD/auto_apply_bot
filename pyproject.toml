@@ -38,10 +38,17 @@ dependencies = [
     "python-docx >= 1, < 2",
     "docx2txt >= 0.8, < 1",
     "peft >= 0.15.0, < 1",
-    "python-magic >= 0.4.27, < 1",
 ]
 
 [project.optional-dependencies]
+
+unix = [
+    "python-magic >= 0.4.27, < 1",
+]
+
+windows = [
+    "python-magic-bin > 0.3, < 1",
+]
 
 test = [
     "pytest >= 8, < 9",
