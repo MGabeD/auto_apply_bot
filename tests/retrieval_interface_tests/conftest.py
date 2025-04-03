@@ -20,6 +20,6 @@ def rag_indexer(temp_project_dir, mock_embedder):
 
 @pytest.fixture
 def test_data_dir():
-    return Path(__file__).parent.parent / "data"
+    return Path(__file__).parent / "data"
 
 
