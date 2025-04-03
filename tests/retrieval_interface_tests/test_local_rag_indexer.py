@@ -13,25 +13,20 @@ logger = get_logger(__name__)
 #  for/if/when I break one of my interfaces unintentionally
 
 
-### ----------------------
-### CLASSMETHODS / STATIC
-### ----------------------
-
 def test_is_allowed_file_type():
     assert LocalRagIndexer.is_allowed_file_type("file.pdf")
     assert not LocalRagIndexer.is_allowed_file_type("file.csv")
+
 
 def test_get_supported_file_types():
     supported = LocalRagIndexer.get_supported_file_types()
     assert ".pdf" in supported
     assert ".doc" in supported
 
-### ----------------------
-### _check_index_exists()
-### ----------------------
 
 def test_check_index_exists_false(rag_indexer):
     assert not rag_indexer._check_index_exists()
+
 
 def test_check_index_exists_true(rag_indexer):
     # Simulate saved index files
@@ -39,9 +34,6 @@ def test_check_index_exists_true(rag_indexer):
     (rag_indexer.vector_store_dir / "chunk_texts.json").touch()
     assert rag_indexer._check_index_exists()
 
-### ----------------------
-### _chunk_documents()
-### ----------------------
 
 def test_chunk_documents(monkeypatch, rag_indexer):
     dummy_doc = mock.Mock()
@@ -53,9 +45,6 @@ def test_chunk_documents(monkeypatch, rag_indexer):
     chunks = rag_indexer._chunk_documents([dummy_doc])
     assert len(chunks) == 2
 
-### ----------------------
-### _filter_duplicates()
-### ----------------------
 
 def test_filter_duplicates(rag_indexer):
     chunks = ["chunk A", "chunk B", "chunk A"]  # 1 duplicate
@@ -63,18 +52,12 @@ def test_filter_duplicates(rag_indexer):
     assert unique_chunks == ["chunk A", "chunk B"]
     assert len(rag_indexer.chunk_hashes) == 2
 
-### ----------------------
-### _embed_chunks()
-### ----------------------
 
 def test_embed_chunks(rag_indexer):
     chunks = ["text1", "text2"]
     emb = rag_indexer._embed_chunks(chunks)
     assert emb.shape == (2, 384)
 
-### ----------------------
-### add_documents()
-### ----------------------
 
 def test_add_documents(monkeypatch, rag_indexer):
     monkeypatch.setitem(rag_indexer.loader_map, ".txt", DummyLoader)
@@ -84,9 +67,6 @@ def test_add_documents(monkeypatch, rag_indexer):
     assert rag_indexer.index is not None
     assert rag_indexer.chunk_texts
 
-### ----------------------
-### save() & load()
-### ----------------------
 
 def test_save_and_load(rag_indexer):
     rag_indexer.chunk_texts = ["abc"]
@@ -103,9 +83,6 @@ def test_save_and_load(rag_indexer):
         assert rag_indexer.chunk_texts == ["abc"]
         assert "hash1" in rag_indexer.chunk_hashes
 
-### ----------------------
-### query()
-### ----------------------
 
 def test_query_success(rag_indexer):
     rag_indexer.chunk_texts = ["A", "B"]
@@ -115,13 +92,11 @@ def test_query_success(rag_indexer):
     assert len(result) == 2
     assert "text" in result[0]
 
+
 def test_query_empty_index(rag_indexer):
     with pytest.raises(ValueError):
         rag_indexer.query("query")
 
-### ----------------------
-### batch_query()
-### ----------------------
 
 def test_batch_query_success(rag_indexer):
     rag_indexer.chunk_texts = ["A", "B"]
@@ -132,9 +107,6 @@ def test_batch_query_success(rag_indexer):
     assert len(batch) == 2
     assert all(isinstance(v, list) for v in batch.values())
 
-### ----------------------
-### wipe_rag()
-### ----------------------
 
 def test_wipe_rag(rag_indexer):
     rag_indexer.chunk_texts = ["abc"]
@@ -145,9 +117,6 @@ def test_wipe_rag(rag_indexer):
     assert rag_indexer.chunk_texts == []
     assert rag_indexer.index is None
 
-### ----------------------
-### test_batch_query() - but actually a full test of RAG just using this function so implicitly testing it as well
-### ----------------------
 
 def test_batch_query_full_rag(rag_indexer, test_data_dir):
     file_paths = list(test_data_dir.glob('*'))
