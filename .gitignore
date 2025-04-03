@@ -13,4 +13,4 @@ vector_store/*
 lora_weights/*
 service/uploads/*
 .vscode/*
-
+.coverage
