@@ -3,6 +3,8 @@ from unittest import mock
 from peft import PeftModel, LoraConfig
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import torch.nn as nn
+import torch
+
 
 class DummyLoader:
     def __init__(self, path):
@@ -15,6 +17,12 @@ class DummyLoader:
 class DummyTokenizer:
     def __init__(self, *args, **kwargs):
         pass
+
+    def __call__(self, text, truncation=True, padding=False, max_length=1024, return_tensors="pt"):
+        return {
+            "input_ids": torch.tensor([[1, 2, 3]]),
+            "attention_mask": torch.tensor([[1, 1, 1]])
+        }
 
 
 class DummyModel(nn.Module):
