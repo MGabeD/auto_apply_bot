@@ -25,6 +25,7 @@ GRADIENT = [
 
 CYAN_BRIGHT = "\033[38;5;45m"
 MAGENTA_BRIGHT = "\033[38;5;201m"
+RED_BRIGHT = GRADIENT[0]
 RESET = "\033[0m"
 
 
@@ -32,10 +33,10 @@ def generate_lcov_report() -> bool:
     try:
         lcov_path = os.path.join(resolve_component_dirs_path("coverage"), "lcov.info")
         subprocess.run(["coverage", "lcov", "-o", lcov_path], check=True)
-        print(f"\033[32mLCOV report written to {lcov_path}\033[0m")
+        print(f"{CYAN_BRIGHT}LCOV report written to {lcov_path}{RESET}")
         return True
     except Exception as e:
-        print(f"\033[31mFailed to write LCOV report: {e}\033[0m")
+        print(f"{RED_BRIGHT}Failed to write LCOV report: {e}{RESET}")
         return False
 
 
