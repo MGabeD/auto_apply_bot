@@ -8,26 +8,25 @@ from django.http import JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.core.files.uploadedfile import TemporaryUploadedFile
 
 from auto_apply_bot.service.controller_service.queue_manager import controller_queue, JobStatus
 from auto_apply_bot.utils.logger import get_logger
 from auto_apply_bot.utils.path_sourcing import ensure_path_is_dir_or_create
+from auto_apply_bot.utils.file_validation import validate_file
+from auto_apply_bot import ALLOWED_EXTENSIONS 
 
 
 logger = get_logger(__name__)
 
 
-ALLOWED_FILE_EXTENSIONS = ['.pdf', '.docx', '.doc', '.txt', '.json']
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
 
 @ensure_path_is_dir_or_create
 def get_upload_dir() -> Path:
     return Path(settings.SERVICE_DIR) / 'uploads'
-
-
-def validate_allowed_file(file) -> bool:
-    return Path(file.name).suffix.lower() in ALLOWED_FILE_EXTENSIONS
 
 
 @csrf_exempt  
@@ -35,48 +34,56 @@ def validate_allowed_file(file) -> bool:
 def upload_files_view(request):
     files = request.FILES.getlist("files")
     total_size = sum(f.size for f in files)
-    total_limit_bytes = MAX_TOTAL_FILE_SIZE
-
-    if total_size > total_limit_bytes:
+    if total_size > MAX_TOTAL_FILE_SIZE:
         return JsonResponse({
             "success": False,
-            "error": f"Total upload exceeds {MAX_TOTAL_FILE_SIZE}MB limit.",
+            "error": f"Total upload exceeds {MAX_TOTAL_FILE_SIZE // (1024 * 1024)}MB limit.",
             "files": []
         }, status=400)
 
+    upload_dir = get_upload_dir()
     file_results = []
-
     for file in files:
         result = {
             "original_name": file.name,
             "size": file.size,
         }
-
-        if not validate_allowed_file(file):
-            result["status"] = "rejected"
-            result["reason"] = f"Unsupported file type: {Path(file.name).suffix.lower()}"
-        elif file.size > MAX_FILE_SIZE:
-            result["status"] = "rejected"
-            result["reason"] = f"File exceeds {MAX_FILE_SIZE}MB limit."
-        else:
-            try:
+        try:
+            is_valid, reason = validate_file(file, ALLOWED_EXTENSIONS, MAX_FILE_SIZE)
+            if not is_valid:
+                result["status"] = "rejected"
+                result["reason"] = reason
+                if isinstance(file, TemporaryUploadedFile):
+                    os.remove(file.temporary_file_path())
+                else:
+                    file.close()
+            else:
                 unique_name = f"{uuid.uuid4().hex}{Path(file.name).suffix.lower()}"
-                save_path = get_upload_dir() / unique_name
-
+                save_path = upload_dir / unique_name
                 with open(save_path, "wb+") as dest:
                     for chunk in file.chunks():
                         dest.write(chunk)
 
-                result["status"] = "uploaded"
-                result["stored_as"] = unique_name
-                result["timestamp"] = now().isoformat()
-
+                result.update({
+                    "status": "uploaded",
+                    "stored_as": unique_name,
+                    "timestamp": now().isoformat(),
+                })
+        except Exception as e:
+            logger.error(f"Error processing file {file.name}: {e}")
+            result["status"] = "error"
+            result["reason"] = str(e)
+            try:
+                if isinstance(file, TemporaryUploadedFile):
+                    os.remove(file.temporary_file_path())
+                else:
+                    file.close()
             except Exception as e:
-                result["status"] = "error"
-                result["reason"] = str(e)
+                logger.error(f"Error closing file {file.name}: {e}")
+                pass
 
         file_results.append(result)
-
+    
     return JsonResponse({
         "success": True,
         "results": file_results

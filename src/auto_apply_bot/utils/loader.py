@@ -3,17 +3,10 @@ from typing import List, Union, Optional
 from pathlib import Path
 from langchain.schema import Document
 from auto_apply_bot.utils.logger import get_logger
+from auto_apply_bot import LOADER_MAP
 
 
 logger = get_logger(__name__)
-
-
-LOADER_MAP = {
-    ".pdf": PyPDFLoader,
-    ".txt": lambda path: TextLoader(path, encoding="utf-8"),
-    ".docx": Docx2txtLoader,
-    ".doc": UnstructuredWordDocumentLoader,
-}
 
 
 def load_documents(file_paths: List[Union[str, Path]], loader_map_override: Optional[dict] = None) -> List[Document]:

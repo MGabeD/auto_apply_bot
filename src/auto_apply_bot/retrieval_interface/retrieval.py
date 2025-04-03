@@ -9,8 +9,8 @@ import faiss
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from auto_apply_bot.utils.logger import get_logger
-from auto_apply_bot import resolve_component_dirs_path
-from auto_apply_bot.utils.loader import load_documents, LOADER_MAP
+from auto_apply_bot import resolve_component_dirs_path, LOADER_MAP
+from auto_apply_bot.utils.loader import load_documents
 from contextlib import contextmanager
 import torch
 

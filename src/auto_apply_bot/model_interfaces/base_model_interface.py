@@ -136,10 +136,6 @@ class BaseModelInterface:
         if post_process_fn:
             return [post_process_fn(o[0]["generated_text"]) for o in outputs]
         else:
-            # logger.info(f"Post-processing outputs... FIND ERRORS HERE MODEL INTERFACE IS CORECT")
-            # for i,j in zip(outputs, prompts):
-            #     logger.warning(f"Output: {i[0]['generated_text']}")
-            #     logger.warning(f"filtered output: {i[0]['generated_text'].replace(j, '').strip()}")
             return [
                 o[0]["generated_text"].replace(prompt, "").strip()
                 for o, prompt in zip(outputs, prompts)
