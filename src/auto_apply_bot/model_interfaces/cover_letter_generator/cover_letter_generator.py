@@ -58,7 +58,8 @@ class CoverLetterModelInterface(LoraModelInterface):
     def train_on_dialogue_pairs(self, 
                                 dialogue_pairs: Optional[List[tuple[str, str]]] = None,
                                 load_from_buffer: bool = False,
-                                output_subdir_override: Optional[str] = None) -> Optional[Path]:
+                                output_subdir_override: Optional[str] = None,
+                                make_new_lora_if_unloaded: bool = True) -> Optional[Path]:
         """
         Trains the model on the dialogue pairs and resets the dialogue pairs buffer of examples.
         :param dialogue_pairs: The dialogue pairs to train on.
@@ -78,7 +79,7 @@ class CoverLetterModelInterface(LoraModelInterface):
             raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
         logger.info(f"Training on {len(train_data)} dialogue pairs.")
         dataset = DialoguePairDataset(train_data, self.tokenizer)
-        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.")
+        self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.", make_new_lora_if_unloaded=make_new_lora_if_unloaded)
         output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
         if load_from_buffer:
             self.reset_feedback()
@@ -92,7 +93,7 @@ class CoverLetterModelInterface(LoraModelInterface):
         self._feedback_examples.clear()
 
     # MARK: This sub-section is for handling training on existing writing samples
-    def train_on_existing_letters(self, letter_paths: List[str], output_subdir_override: Optional[str] = None) -> Optional[Path]:
+    def train_on_existing_letters(self, letter_paths: List[str], output_subdir_override: Optional[str] = None, make_new_lora_if_unloaded: bool = True) -> Optional[Path]:
         """
         Trains the model on existing cover letters by wrapping them with a generic prompt.
         :param letter_paths: The paths to the existing cover letters to train on.
@@ -112,7 +113,7 @@ class CoverLetterModelInterface(LoraModelInterface):
             return None
 
         logger.info(f"Loaded {len(dialogue_pairs)} cover letters as training pairs.")
-        return self.train_on_dialogue_pairs(dialogue_pairs=dialogue_pairs, output_subdir_override=output_subdir_override)
+        return self.train_on_dialogue_pairs(dialogue_pairs=dialogue_pairs, output_subdir_override=output_subdir_override, make_new_lora_if_unloaded=make_new_lora_if_unloaded)
 
     # MARK: This __exit__ adds in a training session for RHLF training if there are any feedback examples
     def __exit__(self, exc_type: type[Exception] | None, exc_val: Exception | None, exc_tb: TracebackType | None) -> None:

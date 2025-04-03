@@ -144,7 +144,7 @@ class LoraModelInterface(BaseModelInterface):
     def _generate_lora_dirname(self) -> str:
         return datetime.now().strftime(f"lora_{self.model_name.split('/')[-1]}_%Y%m%d_%H%M%S")
 
-    def init_new_lora_for_training(self, lora_config_override: Optional[dict] = None) -> None:
+    def init_new_lora_for_training(self, lora_config_override: Optional[dict] = None, force_init_if_loaded: bool = False) -> None:
         """
         Prepares the already-loaded quantized base model for LoRA training.
         Avoids reloading the model, reducing GPU memory pressure and load time.
@@ -153,6 +153,9 @@ class LoraModelInterface(BaseModelInterface):
 
         if self.base_model is None:
             raise RuntimeError("Base model must be loaded before initializing LoRA.")
+        if not force_init_if_loaded and self.has_loaded_lora_adapter():
+            logger.warning("LoRA adapter is already loaded. Skipping initialization.")
+            raise RuntimeError("LoRA adapter is already loaded. Skipping initialization.")
         self.base_model = maybe_prepare_model(self.base_model)
         if "target_modules" not in (lora_config_override or {}):
             logger.warning("LoRA 'target_modules' not explicitly set. Using default ['q_proj', 'v_proj']. This may not work with all models.")
@@ -268,9 +271,13 @@ class LoraModelInterface(BaseModelInterface):
         """
         return isinstance(self.model, PeftModel) and self.last_loaded_adapter_path is not None
     
-    def ensure_lora_adapter_loaded(self, error_message: str = "No LoRA adapter is currently loaded.") -> None:
+    def ensure_lora_adapter_loaded(self, error_message: str = "No LoRA adapter is currently loaded.", make_new_lora_if_unloaded: bool = True) -> None:
         if not self.has_loaded_lora_adapter():
-            raise RuntimeError(error_message)
+            if make_new_lora_if_unloaded:
+                logger.warning(f"No LoRA adapter is currently loaded. Initializing new LoRA adapter.")
+                self.init_new_lora_for_training()
+            else:
+                raise RuntimeError(error_message)
 
     def _ensure_tokenizer_loaded(self) -> None:
         if self.tokenizer is None:
@@ -280,7 +287,7 @@ class LoraModelInterface(BaseModelInterface):
         """
         Freezes the LoRA adapter weights, preventing them from being updated during training.
         """
-        self.ensure_lora_adapter_loaded()
+        self.ensure_lora_adapter_loaded(make_new_lora_if_unloaded=False)
         if isinstance(self.model, PeftModel):
             for param in self.model.parameters():
                 param.requires_grad = False
@@ -292,7 +299,7 @@ class LoraModelInterface(BaseModelInterface):
         """
         Unfreezes the LoRA adapter weights, allowing them to be updated during training.
         """
-        self.ensure_lora_adapter_loaded()
+        self.ensure_lora_adapter_loaded(make_new_lora_if_unloaded=False)
         if isinstance(self.model, PeftModel):
             for param in self.model.parameters():
                 param.requires_grad = True

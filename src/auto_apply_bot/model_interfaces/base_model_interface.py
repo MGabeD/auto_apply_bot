@@ -48,7 +48,8 @@ class BaseModelInterface:
         """
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
-        self.pipe = pipeline("text-generation", model=getattr(self.model, "model", self.model), tokenizer=self.tokenizer)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
+
 
     def __enter__(self) -> "BaseModelInterface":
         if self.device == "cuda":
