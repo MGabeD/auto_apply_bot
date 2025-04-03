@@ -5,7 +5,7 @@ from auto_apply_bot.utils.logger import get_logger
 from transformers import PreTrainedTokenizer, BitsAndBytesConfig
 from typing import List, Optional, Callable
 from pathlib import Path
-from auto_apply_bot.formatter import default_formatter
+from auto_apply_bot.formatters import default_formatter
 
 
 logger = get_logger(__name__)

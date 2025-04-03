@@ -2,7 +2,7 @@ from auto_apply_bot.controller import Controller
 from auto_apply_bot.model_interfaces.skill_parser import SkillParser
 from auto_apply_bot.retrieval_interface.retrieval import LocalRagIndexer
 from auto_apply_bot.model_interfaces.cover_letter_generator.cover_letter_generator import CoverLetterModelInterface
-from auto_apply_bot.formatter import RelevanceFormatter, SummarizeFormatter
+from auto_apply_bot.formatters import RelevanceFormatter, SummarizeFormatter
 from typing import Optional, Union
 from threading import Lock
 
