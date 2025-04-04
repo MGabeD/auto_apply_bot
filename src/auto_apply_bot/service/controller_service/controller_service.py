@@ -6,6 +6,7 @@ from auto_apply_bot.formatters import RelevanceFormatter, SummarizeFormatter
 from typing import Optional, Union
 from threading import Lock
 
+
 _controller = None
 _controller_lock = Lock()
 
