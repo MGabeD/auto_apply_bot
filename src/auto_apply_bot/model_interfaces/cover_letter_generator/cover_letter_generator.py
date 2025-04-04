@@ -19,6 +19,7 @@ class CoverLetterModelInterface(LoraModelInterface):
                  lora_weights_dir: Optional[str] = None,
                  lora_weights_file_override: Optional[str] = None,
                  formatter: Callable[[str, str], str] = default_formatter,
+                 train_on_exit: bool = True,
                  bnb_config: BitsAndBytesConfig = BitsAndBytesConfig(load_in_8bit=True,
                                                                      llm_int8_threshold=6.0,
                                                                      llm_int8_has_fp16_weight=False)):
@@ -31,6 +32,7 @@ class CoverLetterModelInterface(LoraModelInterface):
         )
         self._feedback_examples: List[tuple[str, str]] = []
         self.formatter = formatter
+        self.train_on_exit = train_on_exit
 
     def cleanup(self):
         """
@@ -70,17 +72,25 @@ class CoverLetterModelInterface(LoraModelInterface):
         if not load_from_buffer and dialogue_pairs is None:
             raise ValueError("Either dialogue_pairs must be provided or load_from_buffer must be True.")
         train_data = dialogue_pairs or []
+
         if load_from_buffer:
             train_data = train_data + self._feedback_examples
+
         if len(train_data) < 1:
             logger.warning("No feedback examples to train on. Skipping.")
             return None
+
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be loaded before training. It is suggested to use this within a context manager.")
+
         logger.info(f"Training on {len(train_data)} dialogue pairs.")
         dataset = DialoguePairDataset(train_data, self.tokenizer)
         self.ensure_lora_adapter_loaded(error_message="LoRA adapter must be initialized or loaded before training.", make_new_lora_if_unloaded=make_new_lora_if_unloaded)
+        if self.adapter_frozen:
+            logger.info("Unfreezing LoRA adapter for training.")
+            self.unfreeze_lora_adapter()
         output_path = self.fine_tune(train_dataset=dataset, output_subdir_override=output_subdir_override)
+
         if load_from_buffer:
             self.reset_feedback()
         return output_path
@@ -120,12 +130,13 @@ class CoverLetterModelInterface(LoraModelInterface):
         """
         Exits the context manager and trains on the dialogue pairs.
         """
-        if self._feedback_examples:
+        if self._feedback_examples and self.train_on_exit:
             # Defensive check - yes it adds more depth but will be less error prone
             try:
                 self.train_on_dialogue_pairs(load_from_buffer=True)
             except Exception as e:
                 logger.error(f"Error training on dialogue pairs: {e}, Didn't train on dialogue pairs.")
+
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def generate_cover_letter(self, job_description: str, resume_snippets: List[str], **kwargs) -> str:

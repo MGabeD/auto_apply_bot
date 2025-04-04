@@ -150,14 +150,15 @@ class LoraModelInterface(BaseModelInterface):
         Avoids reloading the model, reducing GPU memory pressure and load time.
         """
         logger.info(f"Preparing LoRA training on loaded model: {self.model_name}")
-
+        lora_config_override = lora_config_override or {}
+        logger.debug(f"Warning for common silent failures: target_modules={lora_config_override.get('target_modules', ['q_proj', 'v_proj'])}")
         if self.base_model is None:
             raise RuntimeError("Base model must be loaded before initializing LoRA.")
         if not force_init_if_loaded and self.has_loaded_lora_adapter():
             logger.warning("LoRA adapter is already loaded. Skipping initialization.")
             raise RuntimeError("LoRA adapter is already loaded. Skipping initialization.")
         self.base_model = maybe_prepare_model(self.base_model)
-        if "target_modules" not in (lora_config_override or {}):
+        if "target_modules" not in lora_config_override:
             logger.warning("LoRA 'target_modules' not explicitly set. Using default ['q_proj', 'v_proj']. This may not work with all models.")
         logger.debug(f"Warning for common silent failure: target_modules={lora_config_override.get('target_modules', ['q_proj', 'v_proj'])} if you are running into issues, make sure this is correct")
         default_config = dict(
@@ -269,7 +270,7 @@ class LoraModelInterface(BaseModelInterface):
         Checks if a LoRA adapter has been loaded.
         Returns True if a LoRA adapter is loaded and False otherwise.
         """
-        return isinstance(self.model, PeftModel) and self.last_loaded_adapter_path is not None
+        return isinstance(self.model, PeftModel) 
     
     def ensure_lora_adapter_loaded(self, error_message: str = "No LoRA adapter is currently loaded.", make_new_lora_if_unloaded: bool = True) -> None:
         if not self.has_loaded_lora_adapter():
