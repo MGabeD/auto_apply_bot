@@ -5,8 +5,6 @@ from auto_apply_bot.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-# MARK This is not a good or usable function, this is not production code, as this project is just a for fun tool for me I am leaving in some scripts I have used to query the 
-#  model before I do anything more complicated with it
 def main():
     job_description = (
         "We’re seeking a software engineer to join our team and help build scalable backend services using Python and AWS. "
@@ -19,14 +17,26 @@ def main():
         "Collaborated on scalable microservices using Flask and Docker."
     ]
 
-    with CoverLetterModelInterface(mode="inference") as model:
-        logger.info("Generating personalized cover letter...")
-        letter = model.generate_cover_letter(job_description, 
-                                             resume_snippets, 
-                                             max_new_tokens=2048, 
-                                             )
-        print("\n--- Generated Cover Letter ---\n")
-        print(letter)
+    try:
+        with CoverLetterModelInterface() as model:
+            logger.info("Generating personalized cover letter...")
+
+            # model.load_adapter(adapter_name)
+
+            letter = model.generate_cover_letter(
+                job_description,
+                resume_snippets,
+                max_new_tokens=1024,
+                do_sample=True,
+                temperature=0.7
+            )
+
+            print("\n--- Generated Cover Letter ---\n")
+            print(letter)
+
+    except Exception as e:
+        logger.error(f"Failed to run model interface: {e}")
+
 
 if __name__ == "__main__":
     main()

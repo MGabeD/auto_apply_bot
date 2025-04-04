@@ -63,7 +63,7 @@ def test_train_on_existing_letters(monkeypatch, dummy_tokenizer):
 
     model = CoverLetterModelInterface()
     model.tokenizer = dummy_tokenizer
-    model.ensure_lora_adapter_loaded = lambda error_message="": None
+    model.ensure_lora_adapter_loaded = lambda error_message="", make_new_lora_if_unloaded=False: None
     model.fine_tune = lambda train_dataset, output_subdir_override=None: "trained_path"
 
     result = model.train_on_existing_letters(["/fake/path.txt"])
@@ -98,7 +98,7 @@ def test_dialogue_pair_dataset_len_and_getitem(dummy_tokenizer):
 def test_train_on_dialogue_pairs_param(dummy_tokenizer, dialogue_pairs, load_from_buffer, expect_value_error, expect_none):
     model = CoverLetterModelInterface()
     model.tokenizer = dummy_tokenizer
-    model.ensure_lora_adapter_loaded = lambda error_message="": None
+    model.ensure_lora_adapter_loaded = lambda error_message="", make_new_lora_if_unloaded=False: None
     model.fine_tune = lambda train_dataset, output_subdir_override=None: "trained"
     if load_from_buffer:
         model._feedback_examples = dialogue_pairs or []

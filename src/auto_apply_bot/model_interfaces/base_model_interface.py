@@ -48,7 +48,7 @@ class BaseModelInterface:
         """
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model and tokenizer must be loaded before initializing pipeline.")
-        self.pipe = pipeline("text-generation", model=getattr(self.model, "model", self.model), tokenizer=self.tokenizer)
+        self.pipe = pipeline("text-generation", model=self.model, tokenizer=self.tokenizer)
 
     def __enter__(self) -> "BaseModelInterface":
         if self.device == "cuda":
@@ -87,7 +87,7 @@ class BaseModelInterface:
             quantization_config=self.bnb_config,
             trust_remote_code=True
         )
-        logger.info("Loaded fully on GPU.")
+        logger.info(f"Loaded fully on GPU. Model type: {type(model)} & model: {self.model_name}")
         return model
 
     def _load_with_fallback(self) -> AutoModelForCausalLM:
