@@ -15,3 +15,5 @@ service/uploads/*
 .vscode/*
 .coverage
 coverage/*
+.venv/*
+
